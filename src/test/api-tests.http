@@ -1,0 +1,104 @@
+### GET request to example server
+GET https://examples.http-client.intellij.net/get
+    ?generated-in=IntelliJ IDEA
+
+###
+### Register User
+POST http://localhost:8080/api/auth/register
+Content-Type: application/json
+
+{
+  "username": "Jeevan192",
+  "password": "your-password"
+}
+### Login
+POST http://localhost:8080/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "Jeevan192",
+  "password": "your-password"
+}
+### Get Quiz Topics
+GET http://localhost:8080/api/quiz/topics
+### Get Java Basics Quiz
+GET http://localhost:8080/api/quiz/t-java-basics
+### Submit Quiz
+POST http://localhost:8080/api/quiz/t-java-basics/submit
+Authorization: Bearer eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJKZWV2YW4xOTIiLCJyb2xlcyI6IlJPTEVfVVNFUiIsImlhdCI6MTc2MTE2MDIwMiwiZXhwIjoxNzYxMTYzODAyfQ.p-iJhbo9Uzy9wWNfppnDKWkoGxoE1_B7NSmUTHVCwSBMAo2raHXNR3zJ2EvrAoCYmfsfjr5O3hSms97JIXGj7g
+Content-Type: application/json
+
+{
+  "answers": {
+    "q1": 1,
+    "q2": 1,
+    "q3": 2
+  },
+  "weeklyHours": 6,
+  "name": "Jeevan192",
+  "target": "backend developer"
+}
+### Export to CSV
+### Export CSV
+### Login to get token
+POST http://localhost:8080/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "Jeevan192",
+  "password": "your-password"
+}
+
+> {%
+    client.global.set("auth_token", response.body.token);
+%}
+
+### Export CSV
+POST http://localhost:8080/api/export/learning-path/csv
+Authorization: Bearer {{auth_token}}
+Content-Type: application/json
+Accept: text/csv
+
+{
+  "title": "Jeevan192's Learning Path",
+  "userName": "Jeevan192",
+  "skillLevel": "BEGINNER",
+  "weeklyHours": 6,
+  "estimatedWeeks": 16,
+  "totalHours": 96,
+  "modules": [
+    {
+      "title": "Java Basics",
+      "description": "Learn Java Basics",
+      "hours": 8,
+      "resources": [
+        "https://docs.oracle.com/javase/tutorial/java/nutsandbolts/index.html"
+      ]
+    },
+    {
+      "title": "Object-Oriented Programming",
+      "description": "Learn OOP concepts",
+      "hours": 12,
+      "resources": [
+        "https://www.baeldung.com/java-oop"
+      ]
+    }
+  ]
+}
+
+> {%
+    // Generate filename with timestamp
+    var date = new Date().toISOString().split('T')[0];
+    var filename = `learning-path-Jeevan192-${date}.csv`;
+    client.global.set("csvFileName", filename);
+
+    // Verify response
+    client.test("CSV Download", function() {
+        client.assert(response.status === 200, "Response status is OK");
+        client.assert(response.contentType.mimeType === "text/csv", "Response is CSV");
+    });
+
+    // Save the file
+    client.log("Saving CSV to: " + filename);
+    client.writeFile(filename, response.body);
+%}
