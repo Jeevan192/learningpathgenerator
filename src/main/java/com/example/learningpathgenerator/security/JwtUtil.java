@@ -1,59 +1,57 @@
 package com.example.learningpathgenerator.security;
 
-import io.jsonwebtoken.*;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.security.Key;
-import java.util.*;
-import java.util.stream.Collectors;
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.util.Date;
 
 @Component
 public class JwtUtil {
 
-    private final Key key;
-    private final long expirationMs;
+    @Value("${jwt.secret}")
+    private String secret;
 
-    public JwtUtil(@Value("${jwt.secret}") String secret,
-                   @Value("${jwt.expiration-ms:3600000}") long expirationMs) {
-        // provide a fallback if secret is too short for key size
-        byte[] keyBytes = Arrays.copyOf(secret.getBytes(), 64);
-        this.key = Keys.hmacShaKeyFor(keyBytes);
-        this.expirationMs = expirationMs;
+    @Value("${jwt.expiration-ms}")
+    private long expirationMs;
+
+    private SecretKey getSigningKey() {
+        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
+        return Keys.hmacShaKeyFor(keyBytes);
     }
 
-    public String generateToken(String username, Collection<String> roles) {
-        Date now = new Date();
-        Date exp = new Date(now.getTime() + expirationMs);
-        String rolesCsv = roles.stream().collect(Collectors.joining(","));
+    public String generateToken(String username) {
         return Jwts.builder()
                 .setSubject(username)
-                .claim("roles", rolesCsv)
-                .setIssuedAt(now)
-                .setExpiration(exp)
-                .signWith(key)
+                .setIssuedAt(new Date())
+                .setExpiration(new Date(System.currentTimeMillis() + expirationMs))
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
     }
 
-    public boolean validateToken(String token) {
-        try {
-            Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token);
-            return true;
-        } catch (JwtException ex) {
-            return false;
-        }
+    public String extractUsername(String token) {
+        return getClaims(token).getSubject();
     }
 
-    public String getUsername(String token) {
-        Claims c = Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token).getBody();
-        return c.getSubject();
+    public boolean validateToken(String token, String username) {
+        String extractedUsername = extractUsername(token);
+        return (extractedUsername.equals(username) && !isTokenExpired(token));
     }
 
-    public List<String> getRoles(String token) {
-        Claims c = Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token).getBody();
-        String csv = Objects.toString(c.get("roles"), "");
-        if (csv.isBlank()) return Collections.emptyList();
-        return Arrays.asList(csv.split(","));
+    private boolean isTokenExpired(String token) {
+        return getClaims(token).getExpiration().before(new Date());
+    }
+
+    private Claims getClaims(String token) {
+        return Jwts.parserBuilder()
+                .setSigningKey(getSigningKey())
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
     }
 }

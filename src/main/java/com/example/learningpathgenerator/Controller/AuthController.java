@@ -48,7 +48,7 @@ public class AuthController {
                 new UsernamePasswordAuthenticationToken(req.getUsername(), req.getPassword()));
         // generate token
         var user = users.findByUsername(req.getUsername()).get();
-        String token = jwtUtil.generateToken(user.getUsername(), user.getRoles());
+        String token = jwtUtil.generateToken(user.getUsername());
         return ResponseEntity.ok(new AuthResponse(token));
     }
 }
