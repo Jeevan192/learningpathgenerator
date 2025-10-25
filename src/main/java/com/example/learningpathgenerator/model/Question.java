@@ -6,7 +6,7 @@ public class Question {
     private String id;
     private String text;
     private List<String> options;
-    private int correctIndex; // index of correct option
+    private int correctIndex;
 
     public Question() {}
 

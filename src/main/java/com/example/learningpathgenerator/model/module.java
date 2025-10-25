@@ -5,29 +5,27 @@ import java.util.List;
 public class module {
     private String title;
     private String description;
-    private List<String> resources;
     private int hours;
+    private List<String> resources;
 
-    public module(String title, String description, List<String> resources, int hours) {
+    public module() {}
+
+    public module(String title, String description, int hours, List<String> resources) {
         this.title = title;
         this.description = description;
-        this.resources = resources;
         this.hours = hours;
+        this.resources = resources;
     }
 
-    public String getTitle() {
-        return title;
-    }
+    public String getTitle() { return title; }
+    public void setTitle(String title) { this.title = title; }
 
-    public String getDescription() {
-        return description;
-    }
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
 
-    public java.util.List<String> getResources() {
-        return resources;
-    }
+    public int getHours() { return hours; }
+    public void setHours(int hours) { this.hours = hours; }
 
-    public int getHours() {
-        return hours;
-    }
+    public List<String> getResources() { return resources; }
+    public void setResources(List<String> resources) { this.resources = resources; }
 }

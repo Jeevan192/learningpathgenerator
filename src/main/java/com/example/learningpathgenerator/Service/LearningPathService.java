@@ -71,8 +71,9 @@ public class LearningPathService {
                 .map(t -> new module(
                         t.getName(),
                         "Learn " + t.getName() + " (" + t.getCategory() + "). Difficulty: " + t.getDifficulty(),
-                        t.getResources(),
-                        t.getRecommendedHours()
+                        t.getRecommendedHours(),
+                        t.getResources()
+
                 ))
                 .collect(Collectors.toList());
 
