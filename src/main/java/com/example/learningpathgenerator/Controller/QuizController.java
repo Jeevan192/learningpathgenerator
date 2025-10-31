@@ -2,18 +2,32 @@ package com.example.learningpathgenerator.Controller;
 
 import com.example.learningpathgenerator.dto.GenerateRequest;
 import com.example.learningpathgenerator.model.*;
+import com.example.learningpathgenerator.entity.UserProgress;
 import com.example.learningpathgenerator.Service.*;
+import com.example.learningpathgenerator.Service.UserLearningPathService;
+import com.example.learningpathgenerator.Service.UserProgressService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
+import java.util.logging.Logger;
 
 @RestController
 @RequestMapping("/api/quiz")
+@CrossOrigin(origins = "*")
 public class QuizController {
+
+    private static final Logger logger = Logger.getLogger(QuizController.class.getName());
 
     private final QuizService quizService;
     private final LearningPathService learningPathService;
+
+    @Autowired
+    private UserLearningPathService userLearningPathService;
+
+    @Autowired
+    private UserProgressService userProgressService;
 
     public QuizController(QuizService quizService, LearningPathService learningPathService) {
         this.quizService = quizService;
@@ -42,7 +56,7 @@ public class QuizController {
         Quiz quiz = quizOpt.get();
 
         // payload expected:
-        // { "answers": { "q1": 1, "q2": 0, ... }, "weeklyHours": 6, "name": "Jeevan", "target": "backend developer" }
+        // { "answers": { "q1": 1, "q2": 0, ... }, "weeklyHours": 6, "name": "Jeevan192", "target": "backend developer" }
         @SuppressWarnings("unchecked")
         Map<String, Integer> answers = (Map<String, Integer>) payload.get("answers");
         int weeklyHours = payload.get("weeklyHours") == null ? 5 : (int) ((Number) payload.get("weeklyHours")).intValue();
@@ -52,6 +66,8 @@ public class QuizController {
         if (answers == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "answers missing"));
         }
+
+        logger.info("Quiz submission received for topic: " + topicId + " by user: " + name);
 
         int total = quiz.getQuestions().size();
         int correct = 0;
@@ -78,6 +94,35 @@ public class QuizController {
         genReq.setTarget(target);
 
         var path = learningPathService.generatePath(genReq);
+
+        // ========== SAVE TO DATABASE ==========
+        if (path != null && name != null && !name.isEmpty()) {
+            try {
+                logger.info("Saving learning path for user: " + name);
+
+                // Save learning path
+                userLearningPathService.saveLearningPath(name, path);
+
+                // Initialize and save progress
+                UserProgress progress = new UserProgress();
+                progress.setUsername(name);
+                progress.setCompletedModules(new ArrayList<>());
+                progress.setCurrentModule(0);
+                progress.setOverallProgress(0.0);
+                progress.setTotalModules(path.getmodules() != null ? path.getmodules().size() : 0);
+
+                userProgressService.saveProgress(progress);
+
+                logger.info("Successfully saved learning path and initialized progress for user: " + name);
+            } catch (Exception e) {
+                logger.severe("Error saving learning path for user " + name + ": " + e.getMessage());
+                e.printStackTrace();
+                // Don't fail the request, just log the error
+            }
+        } else {
+            logger.warning("Cannot save learning path - name is null or empty");
+        }
+        // ========================================
 
         Map<String, Object> resp = new HashMap<>();
         resp.put("score", score);
