@@ -1,63 +1,81 @@
 package com.example.learningpathgenerator.Controller;
 
-import com.example.learningpathgenerator.dto.*;
+import com.example.learningpathgenerator.dto.LoginRequest;
+import com.example.learningpathgenerator.dto.RegisterRequest;
 import com.example.learningpathgenerator.model.User;
 import com.example.learningpathgenerator.repository.UserRepository;
 import com.example.learningpathgenerator.security.JwtUtil;
-import org.springframework.http.*;
-import org.springframework.security.authentication.*;
-import org.springframework.security.core.Authentication;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 
 @RestController
 @RequestMapping("/api/auth")
-@CrossOrigin(origins = "*", allowedHeaders = "*")  // Add CORS support
+@CrossOrigin(origins = "*")
 public class AuthController {
 
-    private final UserRepository users;
+    private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final AuthenticationManager authManager;
     private final JwtUtil jwtUtil;
 
-    public AuthController(UserRepository users, PasswordEncoder passwordEncoder,
-                          AuthenticationManager authManager, JwtUtil jwtUtil) {
-        this.users = users;
+    public AuthController(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtUtil jwtUtil) {
+        this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
-        this.authManager = authManager;
         this.jwtUtil = jwtUtil;
     }
 
     @PostMapping("/register")
-    public ResponseEntity<?> register(@RequestBody RegisterRequest req) {
-        if (users.existsByUsername(req.getUsername())) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body("username already exists");
+    public ResponseEntity<?> register(@RequestBody RegisterRequest request) {
+        if (userRepository.existsByUsername(request.getUsername())) {
+            return ResponseEntity.badRequest().body("Username already exists");
         }
-        var user = new User();
-        user.setUsername(req.getUsername());
-        user.setPassword(passwordEncoder.encode(req.getPassword()));
-        user.setRoles(Set.of("ROLE_USER"));
-        users.save(user);
-        return ResponseEntity.status(HttpStatus.CREATED).build();
+
+        User user = new User();
+        user.setUsername(request.getUsername());
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+
+        // Set role from request or default to USER
+        String role = request.getRole() != null && !request.getRole().isEmpty()
+                ? request.getRole()
+                : "USER";
+
+        // Ensure role has ROLE_ prefix
+        if (!role.startsWith("ROLE_")) {
+            role = "ROLE_" + role;
+        }
+
+        user.setRoles(Set.of(role));
+        userRepository.save(user);
+
+        return ResponseEntity.ok("User registered successfully");
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest req) {
-        try {
-            Authentication auth = authManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(req.getUsername(), req.getPassword()));
+    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
+        User user = userRepository.findByUsername(request.getUsername())
+                .orElse(null);
 
-            // generate token with roles
-            var user = users.findByUsername(req.getUsername()).orElseThrow();
-            String token = jwtUtil.generateToken(user.getUsername());
-            return ResponseEntity.ok(new AuthResponse(token));
-        } catch (BadCredentialsException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid username or password");
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Login failed: " + e.getMessage());
+        if (user == null || !passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            return ResponseEntity.status(401).body(Map.of("message", "Invalid credentials"));
         }
+
+        String token = jwtUtil.generateToken(request.getUsername());
+
+        // Extract role (remove ROLE_ prefix for frontend)
+        String role = user.getRoles().stream()
+                .findFirst()
+                .map(r -> r.replace("ROLE_", ""))
+                .orElse("USER");
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("token", token);
+        response.put("username", user.getUsername());
+        response.put("role", role);
+
+        return ResponseEntity.ok(response);
     }
 }

@@ -1,137 +1,231 @@
 package com.example.learningpathgenerator.config;
 
-import com.example.learningpathgenerator.model.Topic;
+import com.example.learningpathgenerator.entity.TopicEntity;
+import com.example.learningpathgenerator.entity.QuestionEntity;
+import com.example.learningpathgenerator.model.User;
 import com.example.learningpathgenerator.repository.TopicRepository;
+import com.example.learningpathgenerator.repository.QuestionRepository;
+import com.example.learningpathgenerator.repository.UserRepository;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
+import java.util.Set;
 
 @Component
 public class DataInitializer implements CommandLineRunner {
 
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
     private final TopicRepository topicRepository;
+    private final QuestionRepository questionRepository;
 
-    public DataInitializer(TopicRepository topicRepository) {
+    public DataInitializer(UserRepository userRepository,
+                           PasswordEncoder passwordEncoder,
+                           TopicRepository topicRepository,
+                           QuestionRepository questionRepository) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
         this.topicRepository = topicRepository;
+        this.questionRepository = questionRepository;
     }
 
     @Override
     public void run(String... args) throws Exception {
-        if (topicRepository.count() > 0) return;
+        System.out.println("\n========================================");
+        System.out.println("🚀 STARTING DATA INITIALIZATION");
+        System.out.println("========================================\n");
 
-        Topic t1 = new Topic(
-                "t-java-basics",
-                "Java Syntax & Basics",
-                "core",
-                1,
-                8,
-                Arrays.asList("https://docs.oracle.com/javase/tutorial/java/nutsandbolts/index.html", "https://www.w3schools.com/java/"),
-                List.of(),
-                new HashSet<>(Arrays.asList("java", "core", "syntax"))
-        );
+        // Create admin user
+        if (!userRepository.existsByUsername("admin")) {
+            User admin = new User();
+            admin.setUsername("admin");
+            admin.setPassword(passwordEncoder.encode("admin123"));
+            admin.setRoles(Set.of("ROLE_ADMIN"));
+            userRepository.save(admin);
+            System.out.println("✅ Admin user created: admin/admin123");
+        } else {
+            System.out.println("👤 Admin user already exists");
+        }
 
-        Topic t2 = new Topic(
-                "t-oop",
-                "Object-Oriented Programming in Java",
-                "core",
-                2,
-                12,
-                Arrays.asList("https://www.baeldung.com/java-oop", "https://www.oracle.com/technical-resources/articles/java/javadevelopers.html"),
-                List.of("t-java-basics"),
-                new HashSet<>(Arrays.asList("java", "oop", "core"))
-        );
+        // Create regular user
+        if (!userRepository.existsByUsername("user")) {
+            User user = new User();
+            user.setUsername("user");
+            user.setPassword(passwordEncoder.encode("user123"));
+            user.setRoles(Set.of("ROLE_USER"));
+            userRepository.save(user);
+            System.out.println("✅ Regular user created: user/user123");
+        } else {
+            System.out.println("👤 Regular user already exists");
+        }
 
-        Topic t3 = new Topic(
-                "t-collections",
-                "Collections Framework",
-                "core",
-                3,
-                10,
-                Arrays.asList("https://docs.oracle.com/javase/8/docs/technotes/guides/collections/overview.html"),
-                List.of("t-oop"),
-                new HashSet<>(Arrays.asList("collections", "data-structures", "core"))
-        );
+        // Initialize default topics if database is empty
+        long topicCount = topicRepository.count();
+        System.out.println("\n📊 Current topic count in database: " + topicCount);
 
-        Topic t4 = new Topic(
-                "t-concurrency",
-                "Concurrency & Multithreading",
-                "advanced",
-                5,
-                18,
-                Arrays.asList("https://docs.oracle.com/javase/tutorial/essential/concurrency/"),
-                List.of("t-java-basics", "t-oop"),
-                new HashSet<>(Arrays.asList("concurrency", "advanced"))
-        );
+        if (topicCount == 0) {
+            System.out.println("🔧 Initializing default topics and questions...\n");
 
-        Topic t5 = new Topic(
-                "t-streams",
-                "Streams & Functional Programming",
-                "core",
-                3,
-                8,
-                Arrays.asList("https://www.baeldung.com/java-8-streams"),
-                List.of("t-java-basics"),
-                new HashSet<>(Arrays.asList("streams", "functional", "core"))
-        );
+            // Java Basics
+            TopicEntity javaTopic = new TopicEntity("java-basics", "Java Programming Basics",
+                    "Learn fundamental Java programming concepts");
+            topicRepository.save(javaTopic);
+            System.out.println("✅ Saved: " + javaTopic.getId() + " - " + javaTopic.getName());
 
-        Topic t6 = new Topic(
-                "t-data-structures",
-                "Algorithms & Data Structures",
-                "algorithms",
-                4,
-                20,
-                Arrays.asList("https://www.geeksforgeeks.org/data-structures/", "https://visualgo.net/en"),
-                List.of("t-collections"),
-                new HashSet<>(Arrays.asList("algorithms", "data-structures"))
-        );
+            // Verify
+            TopicEntity verifyJava = topicRepository.findById("java-basics").orElse(null);
+            if (verifyJava != null) {
+                System.out.println("   ✓ Verified in DB: " + verifyJava.getName());
+            } else {
+                System.out.println("   ✗ ERROR: Topic not found after save!");
+            }
 
-        Topic t7 = new Topic(
-                "t-spring",
-                "Spring Basics",
-                "web",
-                4,
-                20,
-                Arrays.asList("https://spring.io/guides/gs/spring-boot/"),
-                List.of("t-java-basics", "t-oop"),
-                new HashSet<>(Arrays.asList("spring", "web", "framework"))
-        );
+            questionRepository.save(new QuestionEntity("q1",
+                    "What is the correct way to declare a variable in Java?",
+                    Arrays.asList("var x = 5;", "int x = 5;", "x := 5;", "declare x as int = 5;"),
+                    1, "java-basics"));
 
-        Topic t8 = new Topic(
-                "t-rest",
-                "Building REST APIs with Spring",
-                "web",
-                4,
-                12,
-                Arrays.asList("https://spring.io/guides/gs/rest-service/"),
-                List.of("t-spring"),
-                new HashSet<>(Arrays.asList("rest", "web", "api"))
-        );
+            questionRepository.save(new QuestionEntity("q2",
+                    "Which keyword is used to create a class in Java?",
+                    Arrays.asList("class", "Class", "define", "struct"),
+                    0, "java-basics"));
 
-        Topic t9 = new Topic(
-                "t-testing",
-                "Unit Testing with JUnit",
-                "testing",
-                2,
-                6,
-                Arrays.asList("https://junit.org/junit5/"),
-                List.of("t-java-basics"),
-                new HashSet<>(Arrays.asList("testing", "junit"))
-        );
+            questionRepository.save(new QuestionEntity("q3",
+                    "What is the entry point of a Java application?",
+                    Arrays.asList("start()", "main()", "run()", "execute()"),
+                    1, "java-basics"));
 
-        Topic t10 = new Topic(
-                "t-build-tools",
-                "Maven / Gradle Basics",
-                "tools",
-                2,
-                6,
-                Arrays.asList("https://maven.apache.org/guides/"),
-                List.of("t-java-basics"),
-                new HashSet<>(Arrays.asList("maven", "gradle", "build-tools"))
-        );
+            System.out.println("   ✓ Added 3 questions\n");
 
-        topicRepository.saveAll(Arrays.asList(t1, t2, t3, t4, t5, t6, t7, t8, t9, t10));
+            // Python Basics
+            TopicEntity pythonTopic = new TopicEntity("python-basics", "Python Programming Basics",
+                    "Learn fundamental Python programming concepts");
+            topicRepository.save(pythonTopic);
+            System.out.println("✅ Saved: " + pythonTopic.getId() + " - " + pythonTopic.getName());
+
+            questionRepository.save(new QuestionEntity("q4",
+                    "How do you create a list in Python?",
+                    Arrays.asList("list = []", "list = ()", "list = {}", "list = <>"),
+                    0, "python-basics"));
+
+            questionRepository.save(new QuestionEntity("q5",
+                    "Which keyword is used to define a function in Python?",
+                    Arrays.asList("function", "def", "func", "define"),
+                    1, "python-basics"));
+
+            questionRepository.save(new QuestionEntity("q6",
+                    "What is the correct file extension for Python files?",
+                    Arrays.asList(".pt", ".pyt", ".py", ".python"),
+                    2, "python-basics"));
+
+            System.out.println("   ✓ Added 3 questions\n");
+
+            // Web Development
+            TopicEntity webTopic = new TopicEntity("web-development", "Web Development Fundamentals",
+                    "Learn HTML, CSS, and JavaScript basics");
+            topicRepository.save(webTopic);
+            System.out.println("✅ Saved: " + webTopic.getId() + " - " + webTopic.getName());
+
+            questionRepository.save(new QuestionEntity("q7",
+                    "What does HTML stand for?",
+                    Arrays.asList("Hyper Text Markup Language", "High Tech Modern Language",
+                            "Home Tool Markup Language", "Hyperlinks and Text Markup Language"),
+                    0, "web-development"));
+
+            questionRepository.save(new QuestionEntity("q8",
+                    "Which HTML tag is used to create a hyperlink?",
+                    Arrays.asList("<link>", "<a>", "<href>", "<url>"),
+                    1, "web-development"));
+
+            questionRepository.save(new QuestionEntity("q9",
+                    "What does CSS stand for?",
+                    Arrays.asList("Computer Style Sheets", "Creative Style Sheets",
+                            "Cascading Style Sheets", "Colorful Style Sheets"),
+                    2, "web-development"));
+
+            System.out.println("   ✓ Added 3 questions\n");
+
+            // Database Basics
+            TopicEntity dbTopic = new TopicEntity("database-basics", "Database Fundamentals",
+                    "Learn SQL and database design basics");
+            topicRepository.save(dbTopic);
+            System.out.println("✅ Saved: " + dbTopic.getId() + " - " + dbTopic.getName());
+
+            questionRepository.save(new QuestionEntity("q10",
+                    "Which SQL statement is used to retrieve data from a database?",
+                    Arrays.asList("GET", "RETRIEVE", "SELECT", "FETCH"),
+                    2, "database-basics"));
+
+            questionRepository.save(new QuestionEntity("q11",
+                    "What does SQL stand for?",
+                    Arrays.asList("Structured Query Language", "Simple Query Language",
+                            "Standard Question Language", "System Query Logic"),
+                    0, "database-basics"));
+
+            questionRepository.save(new QuestionEntity("q12",
+                    "Which command is used to create a new table in SQL?",
+                    Arrays.asList("NEW TABLE", "CREATE TABLE", "MAKE TABLE", "ADD TABLE"),
+                    1, "database-basics"));
+
+            System.out.println("   ✓ Added 3 questions\n");
+
+            // Data Structures
+            TopicEntity dsTopic = new TopicEntity("data-structures", "Data Structures & Algorithms",
+                    "Learn fundamental data structures and algorithms");
+            topicRepository.save(dsTopic);
+            System.out.println("✅ Saved: " + dsTopic.getId() + " - " + dsTopic.getName());
+
+            questionRepository.save(new QuestionEntity("q13",
+                    "What is the time complexity of accessing an element in an array by index?",
+                    Arrays.asList("O(n)", "O(1)", "O(log n)", "O(n²)"),
+                    1, "data-structures"));
+
+            questionRepository.save(new QuestionEntity("q14",
+                    "Which data structure uses LIFO (Last In First Out) principle?",
+                    Arrays.asList("Queue", "Array", "Stack", "Tree"),
+                    2, "data-structures"));
+
+            questionRepository.save(new QuestionEntity("q15",
+                    "What is a linked list?",
+                    Arrays.asList("An array with fixed size", "A collection of nodes with pointers",
+                            "A type of tree", "A sorting algorithm"),
+                    1, "data-structures"));
+
+            System.out.println("   ✓ Added 3 questions\n");
+
+            System.out.println("========================================");
+            System.out.println("✅ INITIALIZATION COMPLETE");
+            System.out.println("📊 Total topics: " + topicRepository.count());
+            System.out.println("📊 Total questions: " + questionRepository.count());
+            System.out.println("========================================\n");
+
+            // Print all topics for verification
+            System.out.println("📋 ALL TOPICS IN DATABASE:");
+            topicRepository.findAll().forEach(topic -> {
+                System.out.println("   🔹 ID: " + topic.getId());
+                System.out.println("      Name: " + topic.getName());
+                System.out.println("      Description: " +
+                        (topic.getDescription() != null ?
+                                topic.getDescription().substring(0, Math.min(50, topic.getDescription().length())) + "..."
+                                : "null"));
+                System.out.println();
+            });
+
+        } else {
+            System.out.println("📚 Database already has " + topicCount + " topics");
+
+            // Print existing topics
+            System.out.println("\n📋 EXISTING TOPICS:");
+            topicRepository.findAll().forEach(topic -> {
+                System.out.println("   🔹 " + topic.getId() + " - " + topic.getName());
+            });
+            System.out.println();
+        }
+
+        System.out.println("========================================");
+        System.out.println("✅ DATA INITIALIZER FINISHED");
+        System.out.println("========================================\n");
     }
 }
