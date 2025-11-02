@@ -4,70 +4,145 @@ import com.example.learningpathgenerator.dto.GenerateRequest;
 import com.example.learningpathgenerator.model.*;
 import com.example.learningpathgenerator.entity.UserProgress;
 import com.example.learningpathgenerator.Service.*;
-import com.example.learningpathgenerator.Service.UserLearningPathService;
-import com.example.learningpathgenerator.Service.UserProgressService;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
-
 import java.util.*;
-import java.util.logging.Logger;
 
 @RestController
-@RequestMapping("/api/quiz")
 @CrossOrigin(origins = "*")
 public class QuizController {
 
-    private static final Logger logger = Logger.getLogger(QuizController.class.getName());
-
     private final QuizService quizService;
     private final LearningPathService learningPathService;
+    private final UserLearningPathService userLearningPathService;
+    private final UserProgressService userProgressService;
+    private final ObjectMapper objectMapper;
 
-    @Autowired
-    private UserLearningPathService userLearningPathService;
-
-    @Autowired
-    private UserProgressService userProgressService;
-
-    public QuizController(QuizService quizService, LearningPathService learningPathService) {
+    public QuizController(QuizService quizService,
+                          LearningPathService learningPathService,
+                          UserLearningPathService userLearningPathService,
+                          UserProgressService userProgressService,
+                          ObjectMapper objectMapper) {
         this.quizService = quizService;
         this.learningPathService = learningPathService;
+        this.userLearningPathService = userLearningPathService;
+        this.userProgressService = userProgressService;
+        this.objectMapper = objectMapper;
     }
 
-    @GetMapping("/topics")
-    public ResponseEntity<Set<String>> topics() {
-        return ResponseEntity.ok(quizService.availableTopicIds());
+    // ========== PUBLIC QUIZ ENDPOINTS FOR USERS ==========
+
+    @GetMapping(value = "/api/quiz/topics", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<List<Topic>> topics() {
+        try {
+            List<Topic> topics = quizService.getAllTopics();
+
+            System.out.println("\n========================================");
+            System.out.println("📞 API Call: GET /api/quiz/topics");
+            System.out.println("✅ Retrieved " + topics.size() + " topics from service");
+            System.out.println("========================================");
+
+            topics.forEach(t -> {
+                System.out.println("📚 Topic Details:");
+                System.out.println("   ID: " + t.getId());
+                System.out.println("   Name: " + t.getName());
+                System.out.println("   Description: " +
+                        (t.getDescription() != null ?
+                                t.getDescription().substring(0, Math.min(50, t.getDescription().length())) + "..."
+                                : "null"));
+                System.out.println("   ---");
+            });
+
+            // Debug: Print as JSON
+            try {
+                String json = objectMapper.writeValueAsString(topics);
+                System.out.println("📤 Sending JSON Response:");
+                System.out.println(json.substring(0, Math.min(500, json.length())) + "...");
+            } catch (Exception e) {
+                System.err.println("⚠️ Could not serialize for debug: " + e.getMessage());
+            }
+
+            System.out.println("========================================\n");
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(topics);
+
+        } catch (Exception e) {
+            System.err.println("❌ Error in /api/quiz/topics: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().build();
+        }
     }
 
-    @GetMapping("/{topicId}")
+    @GetMapping(value = "/api/quiz/topics/{topicId}/questions", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<List<Question>> getQuestionsByTopic(@PathVariable String topicId) {
+        try {
+            System.out.println("\n========================================");
+            System.out.println("📞 API Call: GET /api/quiz/topics/" + topicId + "/questions");
+            System.out.println("========================================");
+
+            List<Question> questions = quizService.getQuestionsByTopicId(topicId);
+
+            System.out.println("✅ Retrieved " + questions.size() + " questions for topic: " + topicId);
+
+            questions.forEach(q -> {
+                System.out.println("❓ Question: " + q.getId() + " - " +
+                        (q.getText().length() > 50 ? q.getText().substring(0, 50) + "..." : q.getText()));
+            });
+
+            System.out.println("========================================\n");
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(questions);
+
+        } catch (Exception e) {
+            System.err.println("❌ Error getting questions for topic " + topicId + ": " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    @GetMapping("/api/quiz/{topicId}")
     public ResponseEntity<?> getQuiz(@PathVariable String topicId) {
-        var q = quizService.findByTopicId(topicId);
-        return q.<ResponseEntity<?>>map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+        System.out.println("📞 API Call: GET /api/quiz/" + topicId);
+        return quizService.findByTopicId(topicId)
+                .map(quiz -> {
+                    System.out.println("✅ Found quiz for topic: " + topicId);
+                    return ResponseEntity.ok(quiz);
+                })
+                .orElseGet(() -> {
+                    System.err.println("❌ Quiz not found for topic: " + topicId);
+                    return ResponseEntity.notFound().build();
+                });
     }
 
-    // Submit answers: map of questionId -> chosenIndex (0-based)
-    // Also accept weeklyHours and name via request params/body to produce the learning path directly
-    @PostMapping("/{topicId}/submit")
-    public ResponseEntity<?> submitQuiz(@PathVariable String topicId,
-                                        @RequestBody Map<String, Object> payload) {
+    @PostMapping("/api/quiz/{topicId}/submit")
+    public ResponseEntity<?> submitQuiz(@PathVariable String topicId, @RequestBody Map<String, Object> payload) {
+        System.out.println("📞 API Call: POST /api/quiz/" + topicId + "/submit");
+
         var quizOpt = quizService.findByTopicId(topicId);
-        if (quizOpt.isEmpty()) return ResponseEntity.notFound().build();
-        Quiz quiz = quizOpt.get();
-
-        // payload expected:
-        // { "answers": { "q1": 1, "q2": 0, ... }, "weeklyHours": 6, "name": "Jeevan192", "target": "backend developer" }
-        @SuppressWarnings("unchecked")
-        Map<String, Integer> answers = (Map<String, Integer>) payload.get("answers");
-        int weeklyHours = payload.get("weeklyHours") == null ? 5 : (int) ((Number) payload.get("weeklyHours")).intValue();
-        String name = (String) payload.getOrDefault("name", null);
-        String target = (String) payload.getOrDefault("target", null);
-
-        if (answers == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "answers missing"));
+        if (quizOpt.isEmpty()) {
+            System.err.println("❌ Quiz not found for topic: " + topicId);
+            return ResponseEntity.notFound().build();
         }
 
-        logger.info("Quiz submission received for topic: " + topicId + " by user: " + name);
+        Quiz quiz = quizOpt.get();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Integer> answers = (Map<String, Integer>) payload.get("answers");
+        String name = (String) payload.getOrDefault("name", null);
+        String target = (String) payload.getOrDefault("target", null);
+        int weeklyHours = payload.get("weeklyHours") == null ? 5 : ((Number) payload.get("weeklyHours")).intValue();
+
+        if (answers == null) {
+            System.err.println("❌ No answers provided in submission");
+            return ResponseEntity.badRequest().body(Map.of("error", "answers missing"));
+        }
 
         int total = quiz.getQuestions().size();
         int correct = 0;
@@ -77,13 +152,9 @@ public class QuizController {
         }
         double score = (double) correct / total;
 
-        // Infer skill level by score thresholds (simple heuristic)
-        String inferredSkill;
-        if (score >= 0.8) inferredSkill = "ADVANCED";
-        else if (score >= 0.5) inferredSkill = "INTERMEDIATE";
-        else inferredSkill = "BEGINNER";
+        System.out.println("📊 Quiz Results: " + correct + "/" + total + " (" + (int)(score * 100) + "%)");
 
-        // Use topic tag as interest
+        String inferredSkill = score >= 0.8 ? "ADVANCED" : score >= 0.5 ? "INTERMEDIATE" : "BEGINNER";
         List<String> interests = List.of(quiz.getTopicName().toLowerCase());
 
         GenerateRequest genReq = new GenerateRequest();
@@ -93,44 +164,196 @@ public class QuizController {
         genReq.setWeeklyHours(weeklyHours);
         genReq.setTarget(target);
 
-        var path = learningPathService.generatePath(genReq);
+        LearningPath path = learningPathService.generatePath(genReq);
+        UserProgress savedProgress = null;
 
-        // ========== SAVE TO DATABASE ==========
-        if (path != null && name != null && !name.isEmpty()) {
+        if (path != null && name != null && !name.trim().isEmpty()) {
             try {
-                logger.info("Saving learning path for user: " + name);
-
-                // Save learning path
                 userLearningPathService.saveLearningPath(name, path);
-
-                // Initialize and save progress
                 UserProgress progress = new UserProgress();
                 progress.setUsername(name);
                 progress.setCompletedModules(new ArrayList<>());
                 progress.setCurrentModule(0);
                 progress.setOverallProgress(0.0);
                 progress.setTotalModules(path.getmodules() != null ? path.getmodules().size() : 0);
-
-                userProgressService.saveProgress(progress);
-
-                logger.info("Successfully saved learning path and initialized progress for user: " + name);
+                savedProgress = userProgressService.saveProgress(progress);
+                System.out.println("💾 Saved learning path and progress for user: " + name);
             } catch (Exception e) {
-                logger.severe("Error saving learning path for user " + name + ": " + e.getMessage());
+                System.err.println("❌ Error saving learning path: " + e.getMessage());
                 e.printStackTrace();
-                // Don't fail the request, just log the error
             }
-        } else {
-            logger.warning("Cannot save learning path - name is null or empty");
         }
-        // ========================================
 
-        Map<String, Object> resp = new HashMap<>();
-        resp.put("score", score);
-        resp.put("correct", correct);
-        resp.put("total", total);
-        resp.put("inferredSkill", inferredSkill);
-        resp.put("learningPath", path);
+        Map<String, Object> response = new HashMap<>();
+        response.put("score", score);
+        response.put("correct", correct);
+        response.put("total", total);
+        response.put("inferredSkill", inferredSkill);
+        response.put("learningPath", path);
+        response.put("progress", savedProgress);
 
-        return ResponseEntity.ok(resp);
+        System.out.println("✅ Quiz submission complete");
+        return ResponseEntity.ok(response);
+    }
+
+    // ========== ADMIN ENDPOINTS ==========
+
+    @GetMapping("/api/admin/quiz/topics")
+    public ResponseEntity<?> getAllTopics(@RequestHeader(value = "Role", required = false) String role) {
+        System.out.println("📞 ADMIN API Call: GET /api/admin/quiz/topics");
+
+        if (role == null || !role.equalsIgnoreCase("ADMIN")) {
+            System.err.println("❌ Access denied - Role: " + role);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Access Denied");
+        }
+
+        try {
+            List<Topic> topics = quizService.getAllTopics();
+            System.out.println("✅ ADMIN - Retrieved " + topics.size() + " topics");
+            return ResponseEntity.ok(topics);
+        } catch (Exception e) {
+            System.err.println("❌ ADMIN Error getting topics: " + e.getMessage());
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/api/admin/quiz/topics")
+    public ResponseEntity<?> addTopic(@RequestBody Topic topic, @RequestHeader(value = "Role", required = false) String role) {
+        System.out.println("📞 ADMIN API Call: POST /api/admin/quiz/topics");
+
+        if (role == null || !role.equalsIgnoreCase("ADMIN")) {
+            System.err.println("❌ Access denied - Role: " + role);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Access Denied");
+        }
+
+        try {
+            quizService.addTopic(topic);
+            System.out.println("✅ ADMIN - Added topic: " + topic.getName());
+            return ResponseEntity.ok(Map.of("message", "Topic added successfully"));
+        } catch (Exception e) {
+            System.err.println("❌ ADMIN Error adding topic: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/api/admin/quiz/topics/{topicId}")
+    public ResponseEntity<?> updateTopic(@PathVariable String topicId, @RequestBody Topic topic, @RequestHeader(value = "Role", required = false) String role) {
+        System.out.println("📞 ADMIN API Call: PUT /api/admin/quiz/topics/" + topicId);
+
+        if (role == null || !role.equalsIgnoreCase("ADMIN")) {
+            System.err.println("❌ Access denied - Role: " + role);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Access Denied");
+        }
+
+        try {
+            quizService.updateTopic(topicId, topic);
+            System.out.println("✅ ADMIN - Updated topic: " + topicId);
+            return ResponseEntity.ok(Map.of("message", "Topic updated successfully"));
+        } catch (Exception e) {
+            System.err.println("❌ ADMIN Error updating topic: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/api/admin/quiz/topics/{topicId}")
+    public ResponseEntity<?> deleteTopic(@PathVariable String topicId, @RequestHeader(value = "Role", required = false) String role) {
+        System.out.println("📞 ADMIN API Call: DELETE /api/admin/quiz/topics/" + topicId);
+
+        if (role == null || !role.equalsIgnoreCase("ADMIN")) {
+            System.err.println("❌ Access denied - Role: " + role);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Access Denied");
+        }
+
+        try {
+            quizService.deleteTopic(topicId);
+            System.out.println("🗑️ ADMIN - Deleted topic: " + topicId);
+            return ResponseEntity.ok(Map.of("message", "Topic deleted successfully"));
+        } catch (Exception e) {
+            System.err.println("❌ ADMIN Error deleting topic: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/api/admin/quiz/topics/{topicId}/questions")
+    public ResponseEntity<?> getQuestions(@PathVariable String topicId, @RequestHeader(value = "Role", required = false) String role) {
+        System.out.println("📞 ADMIN API Call: GET /api/admin/quiz/topics/" + topicId + "/questions");
+
+        if (role == null || !role.equalsIgnoreCase("ADMIN")) {
+            System.err.println("❌ Access denied - Role: " + role);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Access Denied");
+        }
+
+        try {
+            List<Question> questions = quizService.getQuestionsByTopicId(topicId);
+            System.out.println("✅ ADMIN - Retrieved " + questions.size() + " questions for topic: " + topicId);
+            return ResponseEntity.ok(questions);
+        } catch (Exception e) {
+            System.err.println("❌ ADMIN Error getting questions: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/api/admin/quiz/topics/{topicId}/questions")
+    public ResponseEntity<?> addQuestion(@PathVariable String topicId, @RequestBody Question question, @RequestHeader(value = "Role", required = false) String role) {
+        System.out.println("📞 ADMIN API Call: POST /api/admin/quiz/topics/" + topicId + "/questions");
+
+        if (role == null || !role.equalsIgnoreCase("ADMIN")) {
+            System.err.println("❌ Access denied - Role: " + role);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Access Denied");
+        }
+
+        try {
+            quizService.addQuestionToTopic(topicId, question);
+            System.out.println("✅ ADMIN - Added question to topic: " + topicId);
+            return ResponseEntity.ok(Map.of("message", "Question added successfully"));
+        } catch (Exception e) {
+            System.err.println("❌ ADMIN Error adding question: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/api/admin/quiz/questions/{questionId}")
+    public ResponseEntity<?> updateQuestion(@PathVariable String questionId, @RequestBody Question question, @RequestHeader(value = "Role", required = false) String role) {
+        System.out.println("📞 ADMIN API Call: PUT /api/admin/quiz/questions/" + questionId);
+
+        if (role == null || !role.equalsIgnoreCase("ADMIN")) {
+            System.err.println("❌ Access denied - Role: " + role);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Access Denied");
+        }
+
+        try {
+            quizService.updateQuestion(questionId, question);
+            System.out.println("✅ ADMIN - Updated question: " + questionId);
+            return ResponseEntity.ok(Map.of("message", "Question updated successfully"));
+        } catch (Exception e) {
+            System.err.println("❌ ADMIN Error updating question: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/api/admin/quiz/questions/{questionId}")
+    public ResponseEntity<?> deleteQuestion(@PathVariable String questionId, @RequestHeader(value = "Role", required = false) String role) {
+        System.out.println("📞 ADMIN API Call: DELETE /api/admin/quiz/questions/" + questionId);
+
+        if (role == null || !role.equalsIgnoreCase("ADMIN")) {
+            System.err.println("❌ Access denied - Role: " + role);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Access Denied");
+        }
+
+        try {
+            quizService.deleteQuestion(questionId);
+            System.out.println("🗑️ ADMIN - Deleted question: " + questionId);
+            return ResponseEntity.ok(Map.of("message", "Question deleted successfully"));
+        } catch (Exception e) {
+            System.err.println("❌ ADMIN Error deleting question: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
     }
 }
