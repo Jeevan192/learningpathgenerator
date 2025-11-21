@@ -1,0 +1,77 @@
+{
+    "title":  "Jeevan\u0027s backend developer Learning Path (BEGINNER)",
+    "userName":  "Jeevan",
+    "skillLevel":  "BEGINNER",
+    "weeklyHours":  10,
+    "estimatedWeeks":  10,
+    "totalHours":  92,
+    "modules":  [
+                    {
+                        "title":  "Java Syntax \u0026 Basics",
+                        "description":  "Learn Java Syntax \u0026 Basics (core). Difficulty: 1",
+                        "resources":  [
+                                          "https://docs.oracle.com/javase/tutorial/java/nutsandbolts/index.html",
+                                          "https://www.w3schools.com/java/"
+                                      ],
+                        "hours":  8
+                    },
+                    {
+                        "title":  "Object-Oriented Programming in Java",
+                        "description":  "Learn Object-Oriented Programming in Java (core). Difficulty: 2",
+                        "resources":  [
+                                          "https://www.baeldung.com/java-oop",
+                                          "https://www.oracle.com/technical-resources/articles/java/javadevelopers.html"
+                                      ],
+                        "hours":  12
+                    },
+                    {
+                        "title":  "Algorithms \u0026 Data Structures",
+                        "description":  "Learn Algorithms \u0026 Data Structures (algorithms). Difficulty: 4",
+                        "resources":  [
+                                          "https://www.geeksforgeeks.org/data-structures/",
+                                          "https://visualgo.net/en"
+                                      ],
+                        "hours":  20
+                    },
+                    {
+                        "title":  "Spring Basics",
+                        "description":  "Learn Spring Basics (web). Difficulty: 4",
+                        "resources":  [
+                                          "https://spring.io/guides/gs/spring-boot/"
+                                      ],
+                        "hours":  20
+                    },
+                    {
+                        "title":  "Building REST APIs with Spring",
+                        "description":  "Learn Building REST APIs with Spring (web). Difficulty: 4",
+                        "resources":  [
+                                          "https://spring.io/guides/gs/rest-service/"
+                                      ],
+                        "hours":  12
+                    },
+                    {
+                        "title":  "Streams \u0026 Functional Programming",
+                        "description":  "Learn Streams \u0026 Functional Programming (core). Difficulty: 3",
+                        "resources":  [
+                                          "https://www.baeldung.com/java-8-streams"
+                                      ],
+                        "hours":  8
+                    },
+                    {
+                        "title":  "Unit Testing with JUnit",
+                        "description":  "Learn Unit Testing with JUnit (testing). Difficulty: 2",
+                        "resources":  [
+                                          "https://junit.org/junit5/"
+                                      ],
+                        "hours":  6
+                    },
+                    {
+                        "title":  "Maven / Gradle Basics",
+                        "description":  "Learn Maven / Gradle Basics (tools). Difficulty: 2",
+                        "resources":  [
+                                          "https://maven.apache.org/guides/"
+                                      ],
+                        "hours":  6
+                    }
+                ]
+}

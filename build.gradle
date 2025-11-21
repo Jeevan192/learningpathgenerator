@@ -28,14 +28,18 @@ dependencies {
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.3'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.3'
 
-    // Database (choose one)
-    runtimeOnly 'com.h2database:h2' // For development
-    // runtimeOnly 'com.mysql:mysql-connector-j' // For MySQL
-    // runtimeOnly 'org.postgresql:postgresql' // For PostgreSQL
+    // OpenAI API (ADD THIS)
+    implementation 'com.theokanning.openai-gpt3-java:service:0.18.2'
 
-    // Lombok (optional, for reducing boilerplate)
+    // Database
+    runtimeOnly 'com.h2database:h2'
+
+    // Lombok
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
+
+    // Validation
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
 
     // Testing Dependencies
     testImplementation 'org.springframework.boot:spring-boot-starter-test'

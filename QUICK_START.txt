@@ -1,0 +1,23 @@
+﻿# Quick Reference - Learning Path Generator
+
+## Start/Stop
+docker-compose up -d          # Start
+docker-compose down           # Stop
+docker logs -f learning-path-app  # View logs
+
+## API Base URL
+http://localhost:8080
+
+## Quick Test
+$quiz = Invoke-RestMethod http://localhost:8080/api/quiz/topics
+
+## Database
+Host: localhost:5432
+DB: learningpath
+User: admin
+Pass: admin123
+
+## Project Info
+Author: Jeevan192
+Date: 2025-10-23
+Status: Production Ready ✅
