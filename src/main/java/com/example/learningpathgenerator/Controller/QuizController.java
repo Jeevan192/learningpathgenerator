@@ -1,136 +1,149 @@
 package com.example.learningpathgenerator.Controller;
 
-import com.example.learningpathgenerator.dto.GenerateRequest;
-import com.example.learningpathgenerator.model.*;
-import com.example.learningpathgenerator.entity.UserProgress;
+import com.example.learningpathgenerator.entity.*;
+import com.example.learningpathgenerator.dto.*;
+import com.example.learningpathgenerator.repository.*;
 import com.example.learningpathgenerator.Service.*;
-import com.example.learningpathgenerator.Service.UserLearningPathService;
-import com.example.learningpathgenerator.Service.UserProgressService;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.*;
-import java.util.logging.Logger;
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/quiz")
+@RequiredArgsConstructor
 @CrossOrigin(origins = "*")
 public class QuizController {
 
-    private static final Logger logger = Logger.getLogger(QuizController.class.getName());
-
-    private final QuizService quizService;
+    private final QuizRepository quizRepository;
+    private final QuizAttemptRepository quizAttemptRepository;
+    private final UserRepository userRepository;
+    private final QuizAnalysisService quizAnalysisService;
+    private final GamificationService gamificationService;
     private final LearningPathService learningPathService;
 
-    @Autowired
-    private UserLearningPathService userLearningPathService;
-
-    @Autowired
-    private UserProgressService userProgressService;
-
-    public QuizController(QuizService quizService, LearningPathService learningPathService) {
-        this.quizService = quizService;
-        this.learningPathService = learningPathService;
+    @GetMapping
+    public ResponseEntity<List<Quiz>> getAllQuizzes() {
+        return ResponseEntity.ok(quizRepository.findAll());
     }
 
-    @GetMapping("/topics")
-    public ResponseEntity<Set<String>> topics() {
-        return ResponseEntity.ok(quizService.availableTopicIds());
+    @GetMapping("/{id}")
+    public ResponseEntity<Quiz> getQuiz(@PathVariable Long id) {
+        return quizRepository.findById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
-    @GetMapping("/{topicId}")
-    public ResponseEntity<?> getQuiz(@PathVariable String topicId) {
-        var q = quizService.findByTopicId(topicId);
-        return q.<ResponseEntity<?>>map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+    @GetMapping("/topic/{topic}")
+    public ResponseEntity<List<Quiz>> getQuizzesByTopic(@PathVariable String topic) {
+        return ResponseEntity.ok(quizRepository.findByTopic(topic));
     }
 
-    // Submit answers: map of questionId -> chosenIndex (0-based)
-    // Also accept weeklyHours and name via request params/body to produce the learning path directly
-    @PostMapping("/{topicId}/submit")
-    public ResponseEntity<?> submitQuiz(@PathVariable String topicId,
-                                        @RequestBody Map<String, Object> payload) {
-        var quizOpt = quizService.findByTopicId(topicId);
-        if (quizOpt.isEmpty()) return ResponseEntity.notFound().build();
-        Quiz quiz = quizOpt.get();
+    @PostMapping("/submit")
+    public ResponseEntity<Map<String, Object>> submitQuiz(@RequestBody QuizSubmission submission) {
+        // Get user and quiz
+        User user = userRepository.findById(submission.getUserId())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        Quiz quiz = quizRepository.findById(submission.getQuizId())
+                .orElseThrow(() -> new RuntimeException("Quiz not found"));
 
-        // payload expected:
-        // { "answers": { "q1": 1, "q2": 0, ... }, "weeklyHours": 6, "name": "Jeevan192", "target": "backend developer" }
-        @SuppressWarnings("unchecked")
-        Map<String, Integer> answers = (Map<String, Integer>) payload.get("answers");
-        int weeklyHours = payload.get("weeklyHours") == null ? 5 : (int) ((Number) payload.get("weeklyHours")).intValue();
-        String name = (String) payload.getOrDefault("name", null);
-        String target = (String) payload.getOrDefault("target", null);
+        // Process submission
+        QuizAttempt attempt = processSubmission(user, quiz, submission);
 
-        if (answers == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "answers missing"));
-        }
+        // Analyze results
+        QuizAnalysisResult analysis = quizAnalysisService.analyzeQuizAttempt(attempt);
 
-        logger.info("Quiz submission received for topic: " + topicId + " by user: " + name);
+        // Award gamification points
+        Map<String, Object> gamificationRewards = gamificationService.awardQuizPoints(user, attempt);
 
-        int total = quiz.getQuestions().size();
-        int correct = 0;
-        for (Question q : quiz.getQuestions()) {
-            Integer chosen = answers.get(q.getId());
-            if (chosen != null && chosen == q.getCorrectIndex()) correct++;
-        }
-        double score = (double) correct / total;
+        // Generate learning path
+        LearningPath path = learningPathService.generateLearningPath(user, attempt);
 
-        // Infer skill level by score thresholds (simple heuristic)
-        String inferredSkill;
-        if (score >= 0.8) inferredSkill = "ADVANCED";
-        else if (score >= 0.5) inferredSkill = "INTERMEDIATE";
-        else inferredSkill = "BEGINNER";
+        // Get question-level analysis
+        List<Map<String, Object>> questionAnalysis = quizAnalysisService.getQuestionAnalysis(attempt);
 
-        // Use topic tag as interest
-        List<String> interests = List.of(quiz.getTopicName().toLowerCase());
+        // Get performance comparison
+        Map<String, Object> comparison = quizAnalysisService.getPerformanceComparison(attempt);
 
-        GenerateRequest genReq = new GenerateRequest();
-        genReq.setName(name);
-        genReq.setSkillLevel(inferredSkill);
-        genReq.setInterests(interests);
-        genReq.setWeeklyHours(weeklyHours);
-        genReq.setTarget(target);
+        Map<String, Object> response = new HashMap<>();
+        response.put("attemptId", attempt.getId());
+        response.put("analysis", analysis);
+        response.put("gamification", gamificationRewards);
+        response.put("learningPathId", path.getId());
+        response.put("learningPath", path);
+        response.put("questionAnalysis", questionAnalysis);
+        response.put("comparison", comparison);
 
-        var path = learningPathService.generatePath(genReq);
+        return ResponseEntity.ok(response);
+    }
 
-        // ========== SAVE TO DATABASE ==========
-        if (path != null && name != null && !name.isEmpty()) {
-            try {
-                logger.info("Saving learning path for user: " + name);
+    @GetMapping("/attempt/{attemptId}")
+    public ResponseEntity<QuizAttempt> getAttempt(@PathVariable Long attemptId) {
+        return quizAttemptRepository.findById(attemptId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
 
-                // Save learning path
-                userLearningPathService.saveLearningPath(name, path);
+    @GetMapping("/user/{userId}/attempts")
+    public ResponseEntity<List<QuizAttempt>> getUserAttempts(@PathVariable Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        return ResponseEntity.ok(quizAttemptRepository.findByUserOrderByCompletedAtDesc(user));
+    }
 
-                // Initialize and save progress
-                UserProgress progress = new UserProgress();
-                progress.setUsername(name);
-                progress.setCompletedModules(new ArrayList<>());
-                progress.setCurrentModule(0);
-                progress.setOverallProgress(0.0);
-                progress.setTotalModules(path.getmodules() != null ? path.getmodules().size() : 0);
+    private QuizAttempt processSubmission(User user, Quiz quiz, QuizSubmission submission) {
+        QuizAttempt attempt = new QuizAttempt();
+        attempt.setUser(user);
+        attempt.setQuiz(quiz);
+        attempt.setAnswers(submission.getAnswers());
+        attempt.setStartedAt(LocalDateTime.now().minusSeconds(submission.getTimeTaken()));
+        attempt.setCompletedAt(LocalDateTime.now());
+        attempt.setTimeTaken(submission.getTimeTaken());
 
-                userProgressService.saveProgress(progress);
+        // Calculate score
+        int correctAnswers = 0;
+        int totalScore = 0;
+        Map<String, Double> skillScores = new HashMap<>();
+        Map<String, Integer> skillAttempts = new HashMap<>();
 
-                logger.info("Successfully saved learning path and initialized progress for user: " + name);
-            } catch (Exception e) {
-                logger.severe("Error saving learning path for user " + name + ": " + e.getMessage());
-                e.printStackTrace();
-                // Don't fail the request, just log the error
+        for (Question question : quiz.getQuestions()) {
+            String userAnswer = submission.getAnswers().get(question.getId());
+            boolean isCorrect = question.getCorrectAnswer().equals(userAnswer);
+
+            if (isCorrect) {
+                correctAnswers++;
+                totalScore += question.getPoints() != null ? question.getPoints() : 1;
+
+                // Update skill scores
+                for (String skill : question.getSkillsTested()) {
+                    skillScores.put(skill, skillScores.getOrDefault(skill, 0.0) + 1.0);
+                    skillAttempts.put(skill, skillAttempts.getOrDefault(skill, 0) + 1);
+                }
+            } else {
+                // Track attempted skills even if wrong
+                for (String skill : question.getSkillsTested()) {
+                    skillAttempts.put(skill, skillAttempts.getOrDefault(skill, 0) + 1);
+                }
             }
-        } else {
-            logger.warning("Cannot save learning path - name is null or empty");
         }
-        // ========================================
 
-        Map<String, Object> resp = new HashMap<>();
-        resp.put("score", score);
-        resp.put("correct", correct);
-        resp.put("total", total);
-        resp.put("inferredSkill", inferredSkill);
-        resp.put("learningPath", path);
+        // Calculate skill proficiency (0-1 scale)
+        Map<String, Double> normalizedSkillScores = new HashMap<>();
+        for (String skill : skillAttempts.keySet()) {
+            double score = skillScores.getOrDefault(skill, 0.0) / skillAttempts.get(skill);
+            normalizedSkillScores.put(skill, score);
+        }
 
-        return ResponseEntity.ok(resp);
+        attempt.setScore(totalScore);
+        attempt.setTotalQuestions(quiz.getQuestions().size());
+        attempt.setCorrectAnswers(correctAnswers);
+        attempt.setSkillScores(normalizedSkillScores);
+        attempt.setPassed(correctAnswers >= quiz.getPassingScore());
+
+        return quizAttemptRepository.save(attempt);
     }
 }

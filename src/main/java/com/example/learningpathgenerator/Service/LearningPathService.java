@@ -1,130 +1,227 @@
 package com.example.learningpathgenerator.Service;
 
-import com.example.learningpathgenerator.dto.GenerateRequest;
-import com.example.learningpathgenerator.model.LearningPath;
-import com.example.learningpathgenerator.model.module;
-import com.example.learningpathgenerator.model.Topic;
-import com.example.learningpathgenerator.repository.TopicRepository;
+import com.example.learningpathgenerator.entity.*;
+import com.example.learningpathgenerator.dto.*;
+import com.example.learningpathgenerator.repository.*;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
+@Slf4j
 public class LearningPathService {
 
-    private final TopicRepository topicRepository;
+    private final LearningPathRepository learningPathRepository;
+    private final LearningResourceRepository resourceRepository;
+    private final ResourceProgressRepository resourceProgressRepository;
+    private final MLModelService mlModelService;
+    private final AIContentService aiContentService;
+    private final QuizAnalysisService quizAnalysisService;
 
-    public LearningPathService(TopicRepository topicRepository) {
-        this.topicRepository = topicRepository;
-    }
+    @Transactional
+    public LearningPath generateLearningPath(User user, QuizAttempt quizAttempt) {
+        log.info("Generating learning path for user: {}", user.getId());
 
-    public LearningPath generatePath(GenerateRequest request) {
-        List<Topic> all = topicRepository.findAll();
+        // Analyze quiz to get skill profile
+        QuizAnalysisResult analysis = quizAnalysisService.analyzeQuizAttempt(quizAttempt);
+        SkillProfile skillProfile = analysis.getSkillProfile();
 
-        String skill = Optional.ofNullable(request.getSkillLevel()).orElse("BEGINNER").toUpperCase(Locale.ROOT);
-        Set<String> interests = Optional.ofNullable(request.getInterests())
-                .map(list -> list.stream().map(String::toLowerCase).collect(Collectors.toSet()))
-                .orElse(Collections.emptySet());
+        // Create learning path
+        LearningPath path = new LearningPath();
+        path.setUser(user);
+        path.setTargetSkill(quizAttempt.getQuiz().getTopic());
+        path.setStatus("ACTIVE");
+        path.setCreatedAt(LocalDateTime.now());
+        path.setCompletionPercentage(0.0);
 
-        List<Topic> candidates = new ArrayList<>(all);
+        // Determine difficulty level
+        String difficulty = determineDifficultyLevel(skillProfile);
+        path.setDifficultyLevel(difficulty);
 
-        Map<Topic, Double> scores = new HashMap<>();
-        int userSkillNumeric = skillToNumeric(skill);
+        // Get available resources
+        List<LearningResource> availableResources = resourceRepository.findAll();
 
-        for (Topic t : candidates) {
-            double score = 0.0;
-            String cat = Optional.ofNullable(t.getCategory()).orElse("").toLowerCase(Locale.ROOT);
-            String name = Optional.ofNullable(t.getName()).orElse("").toLowerCase(Locale.ROOT);
+        // Use ML to recommend resources
+        List<ResourceRecommendation> recommendations = mlModelService.recommendResources(
+                skillProfile,
+                availableResources,
+                10  // top 10 resources
+        );
 
-            for (String interest : interests) {
-                if (cat.contains(interest) || name.contains(interest) || interest.contains(cat) || t.getTags().stream().anyMatch(tag -> tag.equalsIgnoreCase(interest))) {
-                    score += 3.0;
-                }
-            }
+        // Create ordered learning resources
+        List<LearningResource> pathResources = new ArrayList<>();
+        int sequence = 1;
+        int totalDuration = 0;
 
-            int gap = Math.abs(t.getDifficulty() - userSkillNumeric);
-            score += Math.max(0, 5 - gap);
+        for (ResourceRecommendation rec : recommendations) {
+            LearningResource resource = new LearningResource();
+            resource.setLearningPath(path);
+            resource.setTitle(rec.getResource().getTitle());
+            resource.setDescription(rec.getResource().getDescription());
+            resource.setResourceType(rec.getResource().getResourceType());
+            resource.setUrl(rec.getResource().getUrl());
+            resource.setProvider(rec.getResource().getProvider());
+            resource.setSequenceNumber(sequence++);
+            resource.setEstimatedDuration(rec.getResource().getEstimatedDuration());
+            resource.setTags(rec.getResource().getTags());
+            resource.setDifficultyLevel(rec.getResource().getDifficultyLevel());
+            resource.setRelevanceScore(rec.getRelevanceScore());
 
-            if ("core".equalsIgnoreCase(t.getCategory())) score += 1.0;
-
-            if (request.getTarget() != null && request.getTarget().toLowerCase().contains("web") && "web".equalsIgnoreCase(t.getCategory())) {
-                score += 1.5;
-            }
-
-            scores.put(t, score);
+            pathResources.add(resource);
+            totalDuration += rec.getResource().getEstimatedDuration() != null ?
+                    rec.getResource().getEstimatedDuration() : 0;
         }
 
-        int maxTopics = Math.min(candidates.size(), 6 + (3 - userSkillNumeric));
-        List<Topic> picked = scores.entrySet().stream()
-                .sorted(Map.Entry.<Topic, Double>comparingByValue(Comparator.reverseOrder()))
-                .limit(maxTopics)
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toList());
+        path.setResources(pathResources);
+        path.setEstimatedDuration(totalDuration / 60); // convert to hours
 
-        if (userSkillNumeric <= 2) {
-            ensureTopicByIdOrName(picked, all, "t-java-basics");
-            ensureTopicByIdOrName(picked, all, "t-oop");
+        // Generate AI-powered description
+        try {
+            String description = aiContentService.generateLearningPathDescription(
+                    path.getTargetSkill(),
+                    skillProfile.getWeaknesses() != null ? skillProfile.getWeaknesses() : List.of(),
+                    skillProfile.getStrengths() != null ? skillProfile.getStrengths() : List.of(),
+                    skillProfile.getRecommendedLearningStyle()
+            );
+            path.setDescription(description);
+        } catch (Exception e) {
+            log.error("Failed to generate AI description", e);
+            path.setDescription("A personalized learning path to master " + path.getTargetSkill());
         }
 
-        List<module> modules = picked.stream()
-                .map(t -> new module(
-                        t.getName(),
-                        "Learn " + t.getName() + " (" + t.getCategory() + "). Difficulty: " + t.getDifficulty(),
-                        t.getRecommendedHours(),
-                        t.getResources()
+        // Set title
+        path.setTitle(String.format("Master %s - Personalized Path", path.getTargetSkill()));
 
-                ))
-                .collect(Collectors.toList());
+        // Generate explanation
+        path.setGenerationReason(generatePathReason(skillProfile, recommendations));
 
-        int totalHours = modules.stream().mapToInt(module::getHours).sum();
-        int weekly = Math.max(1, request.getWeeklyHours());
-        int estimatedWeeks = (int) Math.ceil((double) totalHours / weekly);
-
-        String title = generateTitle(request.getTarget(), request.getName(), skill);
-
-        return new LearningPath(title,
-                Optional.ofNullable(request.getName()).orElse("Learner"),
-                skill,
-                weekly,
-                estimatedWeeks,
-                totalHours,
-                modules);
+        return learningPathRepository.save(path);
     }
 
-    private void ensureTopicByIdOrName(List<Topic> picked, List<Topic> all, String idOrName) {
-        boolean present = picked.stream().anyMatch(t -> t.getId().equalsIgnoreCase(idOrName) || t.getName().toLowerCase().contains(idOrName.toLowerCase()));
-        if (!present) {
-            for (Topic t : all) {
-                if (t.getId().equalsIgnoreCase(idOrName) || t.getName().toLowerCase().contains(idOrName.toLowerCase())) {
-                    picked.add(0, t);
-                    break;
-                }
-            }
+    @Transactional
+    public void updateProgress(Long pathId, Long resourceId, int progressPercentage) {
+        LearningPath path = learningPathRepository.findById(pathId)
+                .orElseThrow(() -> new RuntimeException("Path not found"));
+
+        User user = path.getUser();
+
+        // Find or create resource progress
+        LearningResource resource = path.getResources().stream()
+                .filter(r -> r.getId().equals(resourceId))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("Resource not found"));
+
+        ResourceProgress progress = resourceProgressRepository
+                .findByUserAndResource(user, resource)
+                .orElseGet(() -> {
+                    ResourceProgress newProgress = new ResourceProgress();
+                    newProgress.setUser(user);
+                    newProgress.setResource(resource);
+                    newProgress.setStartedAt(LocalDateTime.now());
+                    newProgress.setStatus("IN_PROGRESS");
+                    return newProgress;
+                });
+
+        progress.setProgressPercentage(progressPercentage);
+
+        if (progressPercentage >= 100) {
+            progress.setStatus("COMPLETED");
+            progress.setCompletedAt(LocalDateTime.now());
         }
-    }
 
-    private String generateTitle(String target, String name, String skill) {
-        String who = (name == null || name.isBlank()) ? "Personalized" : name + "'s";
-        String what = (target == null || target.isBlank()) ? "Learning Path" : target + " Learning Path";
-        return who + " " + what + " (" + skill + ")";
-    }
+        resourceProgressRepository.save(progress);
 
-    private int skillToNumeric(String skill) {
-        switch (skill.toUpperCase(Locale.ROOT)) {
-            case "BEGINNER":
-                return 1;
-            case "INTERMEDIATE":
-                return 3;
-            case "ADVANCED":
-                return 5;
-            default:
-                try {
-                    int v = Integer.parseInt(skill);
-                    return Math.max(1, Math.min(5, v));
-                } catch (Exception e) {
-                    return 2;
-                }
+        // Calculate overall path completion
+        long completedResources = path.getResources().stream()
+                .filter(r -> {
+                    Optional<ResourceProgress> rp = resourceProgressRepository.findByUserAndResource(user, r);
+                    return rp.isPresent() && "COMPLETED".equals(rp.get().getStatus());
+                })
+                .count();
+
+        double totalProgress = (double) completedResources / path.getResources().size() * 100;
+        path.setCompletionPercentage(totalProgress);
+        path.setLastAccessedAt(LocalDateTime.now());
+
+        if (totalProgress >= 100.0) {
+            path.setStatus("COMPLETED");
         }
+
+        learningPathRepository.save(path);
+    }
+
+    public LearningResource getNextResource(Long pathId, User user) {
+        LearningPath path = learningPathRepository.findById(pathId)
+                .orElseThrow(() -> new RuntimeException("Path not found"));
+
+        // Find first incomplete resource
+        return path.getResources().stream()
+                .filter(r -> {
+                    Optional<ResourceProgress> rp = resourceProgressRepository.findByUserAndResource(user, r);
+                    return rp.isEmpty() || !"COMPLETED".equals(rp.get().getStatus());
+                })
+                .findFirst()
+                .orElse(null);
+    }
+
+    public List<LearningPath> getUserPaths(User user) {
+        return learningPathRepository.findByUser(user);
+    }
+
+    public List<LearningPath> getActivePaths(User user) {
+        return learningPathRepository.findByUserAndStatus(user, "ACTIVE");
+    }
+
+    private String determineDifficultyLevel(SkillProfile profile) {
+        if (profile.getCurrentLevel() != null) {
+            return profile.getCurrentLevel();
+        }
+
+        Map<String, String> proficiency = profile.getSkillProficiency();
+        if (proficiency == null || proficiency.isEmpty()) {
+            return "BEGINNER";
+        }
+
+        long advancedCount = proficiency.values().stream()
+                .filter(level -> "ADVANCED".equals(level))
+                .count();
+        long intermediateCount = proficiency.values().stream()
+                .filter(level -> "INTERMEDIATE".equals(level))
+                .count();
+
+        if (advancedCount > proficiency.size() / 2) return "ADVANCED";
+        if (intermediateCount > proficiency.size() / 2) return "INTERMEDIATE";
+        return "BEGINNER";
+    }
+
+    private String generatePathReason(SkillProfile profile,
+                                      List<ResourceRecommendation> recommendations) {
+        StringBuilder reason = new StringBuilder();
+        reason.append("This path was generated based on your quiz performance. ");
+
+        if (profile.getWeaknesses() != null && !profile.getWeaknesses().isEmpty()) {
+            reason.append("Focuses on improving: ")
+                    .append(String.join(", ", profile.getWeaknesses()))
+                    .append(". ");
+        }
+
+        reason.append("Resources are ordered to build skills progressively. ");
+
+        int totalMinutes = recommendations.stream()
+                .filter(r -> r.getResource().getEstimatedDuration() != null)
+                .mapToInt(r -> r.getResource().getEstimatedDuration())
+                .sum();
+
+        reason.append("Estimated completion: ")
+                .append(totalMinutes / 60)
+                .append(" hours.");
+
+        return reason.toString();
     }
 }
