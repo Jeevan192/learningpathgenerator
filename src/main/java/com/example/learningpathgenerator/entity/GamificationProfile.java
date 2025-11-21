@@ -1,60 +1,106 @@
 package com.example.learningpathgenerator.entity;
 
 import jakarta.persistence.*;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.List;
 
 @Entity
 @Table(name = "gamification_profiles")
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
 public class GamificationProfile {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
+    @OneToOne
+    @JoinColumn(name = "user_id", unique = true)
     private User user;
 
-    @Column(name = "total_points")
-    private Integer totalPoints = 0;
-
-    private Integer level = 1;
-
-    @Column(name = "current_streak")
-    private Integer currentStreak = 0;
-
-    @Column(name = "longest_streak")
-    private Integer longestStreak = 0;
-
-    @ElementCollection
-    @CollectionTable(name = "user_badges", joinColumns = @JoinColumn(name = "profile_id"))
-    @Column(name = "badge")
-    private List<String> badges = new ArrayList<>();
-
-    @ElementCollection
-    @CollectionTable(name = "user_achievements", joinColumns = @JoinColumn(name = "profile_id"))
-    @Column(name = "achievement", length = 500)
-    private List<String> achievements = new ArrayList<>();
-
-    @Column(name = "last_activity_date")
+    private Integer totalPoints;
+    private Integer currentLevel;
+    private Integer quizzesCompleted;
+    private Integer pathsCompleted;
+    private Integer resourcesCompleted;
+    private Integer streak;
     private LocalDate lastActivityDate;
 
-    @Column(name = "quizzes_completed")
-    private Integer quizzesCompleted = 0;
+    public GamificationProfile() {
+        this.totalPoints = 0;
+        this.currentLevel = 1;
+        this.quizzesCompleted = 0;
+        this.pathsCompleted = 0;
+        this.resourcesCompleted = 0;
+        this.streak = 0;
+    }
 
-    @Column(name = "perfect_scores")
-    private Integer perfectScores = 0;
+    // Getters and Setters
+    public Long getId() {
+        return id;
+    }
 
-    @Column(name = "resources_completed")
-    private Integer resourcesCompleted = 0;
+    public void setId(Long id) {
+        this.id = id;
+    }
 
-    @Column(name = "paths_completed")
-    private Integer pathsCompleted = 0;
+    public User getUser() {
+        return user;
+    }
+
+    public void setUser(User user) {
+        this.user = user;
+    }
+
+    public Integer getTotalPoints() {
+        return totalPoints;
+    }
+
+    public void setTotalPoints(Integer totalPoints) {
+        this.totalPoints = totalPoints;
+    }
+
+    public Integer getCurrentLevel() {
+        return currentLevel;
+    }
+
+    public void setCurrentLevel(Integer currentLevel) {
+        this.currentLevel = currentLevel;
+    }
+
+    public Integer getQuizzesCompleted() {
+        return quizzesCompleted;
+    }
+
+    public void setQuizzesCompleted(Integer quizzesCompleted) {
+        this.quizzesCompleted = quizzesCompleted;
+    }
+
+    public Integer getPathsCompleted() {
+        return pathsCompleted;
+    }
+
+    public void setPathsCompleted(Integer pathsCompleted) {
+        this.pathsCompleted = pathsCompleted;
+    }
+
+    public Integer getResourcesCompleted() {
+        return resourcesCompleted;
+    }
+
+    public void setResourcesCompleted(Integer resourcesCompleted) {
+        this.resourcesCompleted = resourcesCompleted;
+    }
+
+    public Integer getStreak() {
+        return streak;
+    }
+
+    public void setStreak(Integer streak) {
+        this.streak = streak;
+    }
+
+    public LocalDate getLastActivityDate() {
+        return lastActivityDate;
+    }
+
+    public void setLastActivityDate(LocalDate lastActivityDate) {
+        this.lastActivityDate = lastActivityDate;
+    }
 }

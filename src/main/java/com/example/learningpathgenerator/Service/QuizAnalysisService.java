@@ -1,13 +1,12 @@
 package com.example.learningpathgenerator.Service;
 
-import com.example.learningpathgenerator.entity.*;
 import com.example.learningpathgenerator.dto.QuizAnalysisResult;
 import com.example.learningpathgenerator.dto.SkillProfile;
-import com.example.learningpathgenerator.repository.*;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import com.example.learningpathgenerator.entity.QuizAttempt;
+import com.example.learningpathgenerator.entity.Question;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -17,69 +16,33 @@ import java.util.stream.Collectors;
 @Slf4j
 public class QuizAnalysisService {
 
-    private final QuizAttemptRepository quizAttemptRepository;
-    private final MLModelService mlModelService;
-    private final AIContentService aiContentService;
-
-    @Transactional
     public QuizAnalysisResult analyzeQuizAttempt(QuizAttempt attempt) {
         QuizAnalysisResult result = new QuizAnalysisResult();
 
-        // Calculate basic metrics
-        result.setScore(attempt.getScore());
-        result.setPercentage((double) attempt.getCorrectAnswers() / attempt.getTotalQuestions() * 100);
-        result.setPassed(attempt.getPassed());
-
-        // Analyze skill performance
-        Map<String, Double> skillScores = attempt.getSkillScores();
-        result.setSkillScores(skillScores);
-
-        // Get historical data for trend analysis
-        List<QuizAttempt> historicalAttempts = quizAttemptRepository
-                .findByUserOrderByCompletedAtDesc(attempt.getUser());
-
-        List<Map<String, Double>> historicalScores = historicalAttempts.stream()
-                .map(QuizAttempt::getSkillScores)
-                .collect(Collectors.toList());
-
-        // Use ML to analyze profile
-        SkillProfile skillProfile = mlModelService.analyzeQuizResults(skillScores, historicalScores);
+        // Create skill profile
+        SkillProfile skillProfile = createSkillProfile(attempt);
         result.setSkillProfile(skillProfile);
 
-        // Identify areas needing improvement
-        List<String> areasToImprove = skillScores.entrySet().stream()
-                .filter(e -> e.getValue() < 0.6)
-                .sorted(Map.Entry.comparingByValue())
-                .map(Map.Entry::getKey)
-                .limit(3)
-                .collect(Collectors.toList());
-        result.setAreasToImprove(areasToImprove);
+        // Calculate overall score
+        double overallScore = (double) attempt.getCorrectAnswers() / attempt.getTotalQuestions() * 100;
+        result.setOverallScore(overallScore);
 
-        // Generate personalized feedback using AI
-        try {
-            List<String> tips = aiContentService.generateStudyTips(
-                    areasToImprove,
-                    skillProfile.getRecommendedLearningStyle(),
-                    attempt.getUser().getGamificationProfile() != null ?
-                            attempt.getUser().getGamificationProfile().getCurrentStreak() : 0
-            );
-            String feedback = tips.stream().collect(Collectors.joining("\n"));
-            result.setPersonalizedFeedback(feedback);
-        } catch (Exception e) {
-            log.error("Failed to generate AI feedback", e);
-            result.setPersonalizedFeedback("Keep practicing to improve your skills!");
+        // Determine performance level
+        String performanceLevel;
+        if (overallScore >= 90) {
+            performanceLevel = "EXCELLENT";
+        } else if (overallScore >= 75) {
+            performanceLevel = "GOOD";
+        } else if (overallScore >= 60) {
+            performanceLevel = "AVERAGE";
+        } else {
+            performanceLevel = "POOR";
         }
+        result.setPerformanceLevel(performanceLevel);
 
-        // Calculate improvement from previous attempts
-        if (historicalAttempts.size() > 1) {
-            QuizAttempt previous = historicalAttempts.get(1);
-            double improvement = attempt.getScore() - previous.getScore();
-            result.setImprovementFromLast(improvement);
-        }
-
-        // Determine recommended next quiz difficulty
-        String nextDifficulty = determineNextDifficulty(attempt, skillProfile);
-        result.setRecommendedNextDifficulty(nextDifficulty);
+        // Generate recommendation
+        String recommendation = generateRecommendation(skillProfile, performanceLevel);
+        result.setRecommendation(recommendation);
 
         return result;
     }
@@ -87,37 +50,20 @@ public class QuizAnalysisService {
     public List<Map<String, Object>> getQuestionAnalysis(QuizAttempt attempt) {
         List<Map<String, Object>> analysis = new ArrayList<>();
 
-        Quiz quiz = attempt.getQuiz();
-        Map<Long, String> userAnswers = attempt.getAnswers();
+        for (Question question : attempt.getQuiz().getQuestions()) {
+            Map<String, Object> questionData = new HashMap<>();
+            questionData.put("questionId", question.getId());
+            questionData.put("questionText", question.getQuestionText());
+            
+            String userAnswer = attempt.getAnswers().get(String.valueOf(question.getId()));
+            questionData.put("userAnswer", userAnswer);
+            questionData.put("correctAnswer", question.getCorrectAnswer());
+            
+            boolean isCorrect = question.getCorrectAnswer().equals(userAnswer);
+            questionData.put("correct", isCorrect);
+            questionData.put("skillsTested", question.getSkillsTested());
 
-        for (Question question : quiz.getQuestions()) {
-            Map<String, Object> questionAnalysis = new HashMap<>();
-
-            questionAnalysis.put("questionId", question.getId());
-            questionAnalysis.put("questionText", question.getQuestionText());
-            questionAnalysis.put("userAnswer", userAnswers.get(question.getId()));
-            questionAnalysis.put("correctAnswer", question.getCorrectAnswer());
-            questionAnalysis.put("isCorrect",
-                    question.getCorrectAnswer().equals(userAnswers.get(question.getId())));
-            questionAnalysis.put("skillsTested", question.getSkillsTested());
-            questionAnalysis.put("difficulty", question.getDifficultyLevel());
-
-            // Generate AI explanation for incorrect answers
-            if (!question.getCorrectAnswer().equals(userAnswers.get(question.getId()))) {
-                try {
-                    String explanation = aiContentService.explainAnswer(
-                            question.getQuestionText(),
-                            question.getCorrectAnswer(),
-                            userAnswers.get(question.getId())
-                    );
-                    questionAnalysis.put("explanation", explanation);
-                } catch (Exception e) {
-                    log.error("Failed to generate explanation", e);
-                    questionAnalysis.put("explanation", "Review this topic for better understanding.");
-                }
-            }
-
-            analysis.add(questionAnalysis);
+            analysis.add(questionData);
         }
 
         return analysis;
@@ -125,49 +71,103 @@ public class QuizAnalysisService {
 
     public Map<String, Object> getPerformanceComparison(QuizAttempt attempt) {
         Map<String, Object> comparison = new HashMap<>();
-
-        // Get all attempts for same quiz
-        List<QuizAttempt> allAttempts = quizAttemptRepository
-                .findByQuiz(attempt.getQuiz());
-
-        if (allAttempts.isEmpty()) {
-            return comparison;
-        }
-
-        // Calculate percentile
-        long betterThan = allAttempts.stream()
-                .filter(a -> a.getScore() < attempt.getScore())
-                .count();
-        double percentile = (double) betterThan / allAttempts.size() * 100;
-
-        comparison.put("percentile", Math.round(percentile));
-        comparison.put("averageScore",
-                allAttempts.stream()
-                        .mapToInt(QuizAttempt::getScore)
-                        .average()
-                        .orElse(0.0));
-        comparison.put("topScore",
-                allAttempts.stream()
-                        .mapToInt(QuizAttempt::getScore)
-                        .max()
-                        .orElse(0));
-        comparison.put("totalAttempts", allAttempts.size());
-
+        
+        double userScore = (double) attempt.getCorrectAnswers() / attempt.getTotalQuestions() * 100;
+        comparison.put("userScore", userScore);
+        comparison.put("passingScore", (double) attempt.getQuiz().getPassingScore() / attempt.getTotalQuestions() * 100);
+        
+        // Mock average score (in real implementation, calculate from all attempts)
+        comparison.put("averageScore", 70.0);
+        
         return comparison;
     }
 
-    private String determineNextDifficulty(QuizAttempt attempt, SkillProfile profile) {
-        double percentage = (double) attempt.getCorrectAnswers() / attempt.getTotalQuestions();
-        String currentDifficulty = attempt.getQuiz().getDifficultyLevel();
+    private SkillProfile createSkillProfile(QuizAttempt attempt) {
+        SkillProfile profile = new SkillProfile();
 
-        if (percentage >= 0.9 && !currentDifficulty.equals("ADVANCED")) {
-            return "ADVANCED";
-        } else if (percentage >= 0.7 && currentDifficulty.equals("BEGINNER")) {
-            return "INTERMEDIATE";
-        } else if (percentage < 0.5 && !currentDifficulty.equals("BEGINNER")) {
-            return "BEGINNER";
+        // Analyze skill scores from attempt
+        Map<String, Double> skillScores = attempt.getSkillScores();
+        Map<String, String> skillProficiency = new HashMap<>();
+
+        for (Map.Entry<String, Double> entry : skillScores.entrySet()) {
+            String skill = entry.getKey();
+            Double score = entry.getValue();
+
+            String level;
+            if (score >= 0.8) {
+                level = "ADVANCED";
+            } else if (score >= 0.6) {
+                level = "INTERMEDIATE";
+            } else {
+                level = "BEGINNER";
+            }
+
+            skillProficiency.put(skill, level);
         }
 
-        return currentDifficulty;
+        profile.setSkillProficiency(skillProficiency);
+
+        // Identify strengths and weaknesses
+        List<String> strengths = skillScores.entrySet().stream()
+                .filter(e -> e.getValue() >= 0.7)
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
+
+        List<String> weaknesses = skillScores.entrySet().stream()
+                .filter(e -> e.getValue() < 0.6)
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
+
+        profile.setStrengths(strengths);
+        profile.setWeaknesses(weaknesses);
+
+        // Determine current level
+        double avgScore = skillScores.values().stream()
+                .mapToDouble(Double::doubleValue)
+                .average()
+                .orElse(0.5);
+
+        if (avgScore >= 0.8) {
+            profile.setCurrentLevel("ADVANCED");
+        } else if (avgScore >= 0.6) {
+            profile.setCurrentLevel("INTERMEDIATE");
+        } else {
+            profile.setCurrentLevel("BEGINNER");
+        }
+
+        // Recommend learning style
+        profile.setRecommendedLearningStyle("HANDS_ON");
+
+        return profile;
+    }
+
+    private String generateRecommendation(SkillProfile profile, String performanceLevel) {
+        StringBuilder recommendation = new StringBuilder();
+
+        if ("EXCELLENT".equals(performanceLevel)) {
+            recommendation.append("Outstanding performance! ");
+        } else if ("GOOD".equals(performanceLevel)) {
+            recommendation.append("Good job! ");
+        } else if ("AVERAGE".equals(performanceLevel)) {
+            recommendation.append("You're making progress! ");
+        } else {
+            recommendation.append("Don't worry, everyone starts somewhere! ");
+        }
+
+        if (profile.getWeaknesses() != null && !profile.getWeaknesses().isEmpty()) {
+            recommendation.append("Focus on improving: ")
+                    .append(String.join(", ", profile.getWeaknesses()))
+                    .append(". ");
+        }
+
+        if (profile.getStrengths() != null && !profile.getStrengths().isEmpty()) {
+            recommendation.append("Your strengths include: ")
+                    .append(String.join(", ", profile.getStrengths()))
+                    .append(". ");
+        }
+
+        recommendation.append("A personalized learning path has been generated to help you improve.");
+
+        return recommendation.toString();
     }
 }

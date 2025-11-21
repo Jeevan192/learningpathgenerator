@@ -8,5 +8,4 @@ import java.util.List;
 @Repository
 public interface QuizRepository extends JpaRepository<Quiz, Long> {
     List<Quiz> findByTopic(String topic);
-    List<Quiz> findByDifficultyLevel(String difficultyLevel);
 }

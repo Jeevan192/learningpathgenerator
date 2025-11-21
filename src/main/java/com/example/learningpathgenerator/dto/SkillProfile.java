@@ -1,21 +1,55 @@
 package com.example.learningpathgenerator.dto;
 
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
 public class SkillProfile {
-    private Map<String, String> skillProficiency = new HashMap<>(); // skill -> BEGINNER/INTERMEDIATE/ADVANCED
+    private String currentLevel; // BEGINNER, INTERMEDIATE, ADVANCED
+    private Map<String, String> skillProficiency; // skill -> proficiency level
     private List<String> strengths;
     private List<String> weaknesses;
-    private Double learningVelocity;
-    private String recommendedLearningStyle; // VISUAL, READING, HANDS_ON, MIXED
-    private String currentLevel;
-    private Integer availableTimePerWeek;
+    private String recommendedLearningStyle;
+
+    public SkillProfile() {}
+
+    // Getters and Setters
+    public String getCurrentLevel() {
+        return currentLevel;
+    }
+
+    public void setCurrentLevel(String currentLevel) {
+        this.currentLevel = currentLevel;
+    }
+
+    public Map<String, String> getSkillProficiency() {
+        return skillProficiency;
+    }
+
+    public void setSkillProficiency(Map<String, String> skillProficiency) {
+        this.skillProficiency = skillProficiency;
+    }
+
+    public List<String> getStrengths() {
+        return strengths;
+    }
+
+    public void setStrengths(List<String> strengths) {
+        this.strengths = strengths;
+    }
+
+    public List<String> getWeaknesses() {
+        return weaknesses;
+    }
+
+    public void setWeaknesses(List<String> weaknesses) {
+        this.weaknesses = weaknesses;
+    }
+
+    public String getRecommendedLearningStyle() {
+        return recommendedLearningStyle;
+    }
+
+    public void setRecommendedLearningStyle(String recommendedLearningStyle) {
+        this.recommendedLearningStyle = recommendedLearningStyle;
+    }
 }

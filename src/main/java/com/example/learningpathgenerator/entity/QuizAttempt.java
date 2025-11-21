@@ -1,59 +1,143 @@
 package com.example.learningpathgenerator.entity;
 
 import jakarta.persistence.*;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
 @Entity
 @Table(name = "quiz_attempts")
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
 public class QuizAttempt {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
+    @ManyToOne
+    @JoinColumn(name = "user_id")
     private User user;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "quiz_id", nullable = false)
+    @ManyToOne
+    @JoinColumn(name = "quiz_id")
     private Quiz quiz;
 
     @ElementCollection
-    @CollectionTable(name = "quiz_answers", joinColumns = @JoinColumn(name = "attempt_id"))
+    @CollectionTable(name = "quiz_attempt_answers", joinColumns = @JoinColumn(name = "attempt_id"))
     @MapKeyColumn(name = "question_id")
     @Column(name = "answer")
-    private Map<Long, String> answers = new HashMap<>();
+    private Map<String, String> answers = new HashMap<>();
+
+    private LocalDateTime startedAt;
+    private LocalDateTime completedAt;
+    private Integer timeTaken; // in seconds
 
     private Integer score;
-
-    @Column(name = "total_questions")
     private Integer totalQuestions;
-
-    @Column(name = "correct_answers")
     private Integer correctAnswers;
 
     @ElementCollection
-    @CollectionTable(name = "skill_scores", joinColumns = @JoinColumn(name = "attempt_id"))
-    @MapKeyColumn(name = "skill_name")
-    @Column(name = "score_value")
+    @CollectionTable(name = "quiz_attempt_skill_scores", joinColumns = @JoinColumn(name = "attempt_id"))
+    @MapKeyColumn(name = "skill")
+    @Column(name = "score")
     private Map<String, Double> skillScores = new HashMap<>();
 
-    @Column(name = "started_at")
-    private LocalDateTime startedAt;
-
-    @Column(name = "completed_at")
-    private LocalDateTime completedAt;
-
-    @Column(name = "time_taken")
-    private Integer timeTaken; // in seconds
-
     private Boolean passed;
+
+    public QuizAttempt() {}
+
+    // Getters and Setters
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public User getUser() {
+        return user;
+    }
+
+    public void setUser(User user) {
+        this.user = user;
+    }
+
+    public Quiz getQuiz() {
+        return quiz;
+    }
+
+    public void setQuiz(Quiz quiz) {
+        this.quiz = quiz;
+    }
+
+    public Map<String, String> getAnswers() {
+        return answers;
+    }
+
+    public void setAnswers(Map<String, String> answers) {
+        this.answers = answers;
+    }
+
+    public LocalDateTime getStartedAt() {
+        return startedAt;
+    }
+
+    public void setStartedAt(LocalDateTime startedAt) {
+        this.startedAt = startedAt;
+    }
+
+    public LocalDateTime getCompletedAt() {
+        return completedAt;
+    }
+
+    public void setCompletedAt(LocalDateTime completedAt) {
+        this.completedAt = completedAt;
+    }
+
+    public Integer getTimeTaken() {
+        return timeTaken;
+    }
+
+    public void setTimeTaken(Integer timeTaken) {
+        this.timeTaken = timeTaken;
+    }
+
+    public Integer getScore() {
+        return score;
+    }
+
+    public void setScore(Integer score) {
+        this.score = score;
+    }
+
+    public Integer getTotalQuestions() {
+        return totalQuestions;
+    }
+
+    public void setTotalQuestions(Integer totalQuestions) {
+        this.totalQuestions = totalQuestions;
+    }
+
+    public Integer getCorrectAnswers() {
+        return correctAnswers;
+    }
+
+    public void setCorrectAnswers(Integer correctAnswers) {
+        this.correctAnswers = correctAnswers;
+    }
+
+    public Map<String, Double> getSkillScores() {
+        return skillScores;
+    }
+
+    public void setSkillScores(Map<String, Double> skillScores) {
+        this.skillScores = skillScores;
+    }
+
+    public Boolean getPassed() {
+        return passed;
+    }
+
+    public void setPassed(Boolean passed) {
+        this.passed = passed;
+    }
 }

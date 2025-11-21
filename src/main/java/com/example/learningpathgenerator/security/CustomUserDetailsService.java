@@ -1,5 +1,6 @@
 package com.example.learningpathgenerator.security;
 
+import com.example.learningpathgenerator.entity.User;
 import com.example.learningpathgenerator.repository.UserRepository;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;

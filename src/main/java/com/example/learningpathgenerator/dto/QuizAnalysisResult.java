@@ -1,22 +1,43 @@
 package com.example.learningpathgenerator.dto;
 
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
-import java.util.List;
-import java.util.Map;
-
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
 public class QuizAnalysisResult {
-    private Integer score;
-    private Double percentage;
-    private Boolean passed;
-    private Map<String, Double> skillScores;
     private SkillProfile skillProfile;
-    private List<String> areasToImprove;
-    private String personalizedFeedback;
-    private Double improvementFromLast;
-    private String recommendedNextDifficulty;
+    private Double overallScore;
+    private String performanceLevel; // EXCELLENT, GOOD, AVERAGE, POOR
+    private String recommendation;
+
+    public QuizAnalysisResult() {}
+
+    // Getters and Setters
+    public SkillProfile getSkillProfile() {
+        return skillProfile;
+    }
+
+    public void setSkillProfile(SkillProfile skillProfile) {
+        this.skillProfile = skillProfile;
+    }
+
+    public Double getOverallScore() {
+        return overallScore;
+    }
+
+    public void setOverallScore(Double overallScore) {
+        this.overallScore = overallScore;
+    }
+
+    public String getPerformanceLevel() {
+        return performanceLevel;
+    }
+
+    public void setPerformanceLevel(String performanceLevel) {
+        this.performanceLevel = performanceLevel;
+    }
+
+    public String getRecommendation() {
+        return recommendation;
+    }
+
+    public void setRecommendation(String recommendation) {
+        this.recommendation = recommendation;
+    }
 }
