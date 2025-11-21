@@ -2,7 +2,7 @@ package com.example.learningpathgenerator.Controller;
 
 import com.example.learningpathgenerator.dto.LoginRequest;
 import com.example.learningpathgenerator.dto.RegisterRequest;
-import com.example.learningpathgenerator.model.User;
+import com.example.learningpathgenerator.entity.User;
 import com.example.learningpathgenerator.repository.UserRepository;
 import com.example.learningpathgenerator.security.JwtUtil;
 import org.springframework.http.ResponseEntity;
