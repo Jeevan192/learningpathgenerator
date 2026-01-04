@@ -1,16 +1,28 @@
 package com.example.learningpathgenerator.entity;
 
 import jakarta.persistence.*;
-import java.time.LocalDateTime;
-import java.util.HashSet;
-import java.util.Set;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
 
+import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.List;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @Entity
 @Table(name = "users")
-public class User {
+public class User implements UserDetails {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    private Integer id;
 
     @Column(unique = true, nullable = false)
     private String username;
@@ -18,75 +30,47 @@ public class User {
     @Column(unique = true)
     private String email;
 
-    @Column(nullable = false)
     private String password;
 
-    @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "user_roles", joinColumns = @JoinColumn(name = "user_id"))
-    @Column(name = "role")
-    private Set<String> roles = new HashSet<>();
+    // Security question for admin registration
+    private String securityQuestion;
+    private String securityAnswer;
+
+    // For password reset
+    private String resetToken;
+    private LocalDateTime resetTokenExpiry;
+
+    @Builder.Default
+    private Boolean enabled = true;
+
+    @Enumerated(EnumType.STRING)
+    private Role role;
 
     private LocalDateTime createdAt;
-    private LocalDateTime lastActiveAt;
+    private LocalDateTime lastLoginAt;
 
-    public User() {
-        this.roles = new HashSet<>();
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
     }
 
-    // Getters and Setters
-    public Long getId() {
-        return id;
+    @Override
+    public boolean isAccountNonExpired() {
+        return true;
     }
 
-    public void setId(Long id) {
-        this.id = id;
+    @Override
+    public boolean isAccountNonLocked() {
+        return true;
     }
 
-    public String getUsername() {
-        return username;
+    @Override
+    public boolean isCredentialsNonExpired() {
+        return true;
     }
 
-    public void setUsername(String username) {
-        this.username = username;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public void setEmail(String email) {
-        this.email = email;
-    }
-
-    public String getPassword() {
-        return password;
-    }
-
-    public void setPassword(String password) {
-        this.password = password;
-    }
-
-    public Set<String> getRoles() {
-        return roles;
-    }
-
-    public void setRoles(Set<String> roles) {
-        this.roles = roles;
-    }
-
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
-
-    public LocalDateTime getLastActiveAt() {
-        return lastActiveAt;
-    }
-
-    public void setLastActiveAt(LocalDateTime lastActiveAt) {
-        this.lastActiveAt = lastActiveAt;
+    @Override
+    public boolean isEnabled() {
+        return enabled != null ? enabled : true;
     }
 }

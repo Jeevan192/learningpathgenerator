@@ -1,15 +1,14 @@
-FROM eclipse-temurin:17-jdk-alpine AS build
-WORKDIR /workspace/app
-COPY gradlew .
-COPY gradle gradle
-COPY build.gradle .
-COPY settings.gradle .
-COPY src src
-RUN chmod +x gradlew
-RUN ./gradlew build -x test --no-daemon
-
-FROM eclipse-temurin:17-jre-alpine
+# Stage 1: Build
+FROM gradle:8.4-jdk17 AS builder
 WORKDIR /app
-COPY --from=build /workspace/app/build/libs/*.jar app.jar
+COPY --chown=gradle:gradle . .
+RUN ./gradlew clean build -x test --no-daemon
+
+# Stage 2: Run
+FROM openjdk:17-jdk-slim
+WORKDIR /app
+COPY --from=builder /app/build/libs/*.jar app.jar
+# Create directory for H2 database
+RUN mkdir -p /data
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]

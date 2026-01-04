@@ -1,308 +1,416 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import api from '../services/api';
 import './Dashboard.css';
 
-function Dashboard({ learningPath, progress, role, onStartQuiz, onProgressUpdate }) {
-  const [expandedModule, setExpandedModule] = useState(null);
-
-  const handleExportCSV = () => {
-    if (!learningPath || !learningPath.modules) return;
-    const csvRows = [
-      ['Module #', 'Title', 'Description', 'Hours', 'Topics']
-    ];
-    learningPath.modules.forEach((module, idx) => {
-      csvRows.push([
-        idx + 1,
-        `"${module.title}"`,
-        `"${module.description}"`,
-        module.hours,
-        `"${(module.topics || []).join('; ')}"`
-      ]);
+const Dashboard = () => {
+    const navigate = useNavigate();
+    const [user, setUser] = useState(null);
+    const [topics, setTopics] = useState([]);
+    const [learningPaths, setLearningPaths] = useState([]);
+    const [gamificationProfile, setGamificationProfile] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const [showPathGenerator, setShowPathGenerator] = useState(false);
+    const [generatingPath, setGeneratingPath] = useState(false);
+    const [pathForm, setPathForm] = useState({
+        topic: '',
+        skillLevel: 'BEGINNER',
+        targetDays: 30
     });
-    const csvContent = csvRows.map(row => row.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${learningPath.title.replace(/\s+/g, '_')}_modules.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  };
 
-  const showConfetti = () => {
-    const canvas = document.createElement('canvas');
-    canvas.className = 'confetti-canvas';
-    document.body.appendChild(canvas);
-    const ctx = canvas.getContext('2d');
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    const pieces = Array.from({ length: 100 }, () => ({
-      x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height * 0.2,
-      r: Math.random() * 8 + 4,
-      c: `hsl(${Math.random()*360},100%,50%)`,
-      s: Math.random() * 3 + 2
-    }));
-    let frame = 0;
-    function draw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      pieces.forEach(p => {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, 2*Math.PI);
-        ctx.fillStyle = p.c;
-        ctx.fill();
-        p.y += p.s;
-        p.x += Math.sin(frame/10 + p.y/20) * 2;
-      });
-      frame++;
-      if (frame < 80) requestAnimationFrame(draw);
-      else document.body.removeChild(canvas);
-    }
-    draw();
-  };
+    useEffect(() => {
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+            try {
+                const parsedUser = JSON.parse(storedUser);
+                setUser(parsedUser);
+                console.log('[Dashboard] Loaded user:', parsedUser);
+            } catch (e) {
+                console.error('[Dashboard] Error parsing user:', e);
+            }
+        }
+        fetchDashboardData();
+    }, []);
 
-  const handleCompleteModule = async (moduleIndex) => {
-    if (!progress || !learningPath) return;
-    const completedModules = progress.completedModules || [];
-    if (completedModules.includes(moduleIndex)) {
-      alert('Module already completed!');
-      return;
-    }
-    const newCompletedModules = [...completedModules, moduleIndex];
-    const newProgressPercent = (newCompletedModules.length / progress.totalModules) * 100;
-    const updatedProgress = {
-      ...progress,
-      completedModules: newCompletedModules,
-      currentModule: moduleIndex + 1,
-      overallProgress: newProgressPercent
+    const fetchDashboardData = async () => {
+        setLoading(true);
+        try {
+            // Fetch all data with proper error handling for each request
+            const results = await Promise.allSettled([
+                api.get('/quiz/topics'),
+                api.get('/learning-paths'),
+                api.get('/gamification/stats')
+            ]);
+
+            // Handle topics response
+            if (results[0].status === 'fulfilled') {
+                const topicsData = results[0].value.data;
+                setTopics(Array.isArray(topicsData) ? topicsData : []);
+                console.log('[Dashboard] Topics loaded:', topicsData);
+            } else {
+                console.warn('[Dashboard] Failed to load topics:', results[0].reason?.message);
+                setTopics([]);
+            }
+
+            // Handle learning paths response
+            if (results[1].status === 'fulfilled') {
+                const pathsData = results[1].value.data;
+                setLearningPaths(Array.isArray(pathsData) ? pathsData : []);
+                console.log('[Dashboard] Learning paths loaded:', pathsData);
+            } else {
+                console.warn('[Dashboard] Failed to load paths:', results[1].reason?.message);
+                setLearningPaths([]);
+            }
+
+            // Handle gamification profile response
+            if (results[2].status === 'fulfilled') {
+                setGamificationProfile(results[2].value.data);
+                console.log('[Dashboard] Gamification profile loaded:', results[2].value.data);
+            } else {
+                console.warn('[Dashboard] Failed to load profile:', results[2].reason?.message);
+                // Set default profile
+                setGamificationProfile({
+                    totalPoints: 0,
+                    currentStreak: 0,
+                    quizzesCompleted: 0,
+                    level: 1
+                });
+            }
+
+        } catch (err) {
+            console.error('[Dashboard] Error fetching data:', err);
+            setError('Failed to load some dashboard data');
+        } finally {
+            setLoading(false);
+        }
     };
-    const result = await onProgressUpdate(updatedProgress);
-    if (result.success) {
-      showConfetti();
-    } else {
-      alert('Failed to update progress');
+
+    const handleLogout = () => {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        navigate('/login');
+    };
+
+    const handleAdminPanel = () => {
+        navigate('/admin');
+    };
+
+    const handleStartQuiz = (topic = null) => {
+        if (topic) {
+            navigate(`/quiz/${encodeURIComponent(topic)}`);
+        } else {
+            navigate('/quiz');
+        }
+    };
+
+    const handleLeaderboard = () => {
+        navigate('/leaderboard');
+    };
+
+    const handleViewPath = (pathId) => {
+        navigate(`/learning-path/${pathId}`);
+    };
+
+    const handleGeneratePath = async (e) => {
+        e.preventDefault();
+        if (!pathForm.topic) {
+            setError('Please select a topic');
+            return;
+        }
+
+        setGeneratingPath(true);
+        setError('');
+
+        try {
+            console.log('[Dashboard] Generating path with:', pathForm);
+            const response = await api.post('/learning-paths/generate', {
+                topic: pathForm.topic,
+                skillLevel: pathForm.skillLevel,
+                targetDays: parseInt(pathForm.targetDays)
+            });
+
+            console.log('[Dashboard] Path generated:', response.data);
+            setLearningPaths(prev => [...prev, response.data]);
+            setShowPathGenerator(false);
+            setPathForm({ topic: '', skillLevel: 'BEGINNER', targetDays: 30 });
+        } catch (err) {
+            console.error('[Dashboard] Error generating path:', err);
+            setError(err.response?.data?.message || 'Failed to generate learning path. Please try again.');
+        } finally {
+            setGeneratingPath(false);
+        }
+    };
+
+    const handleDeletePath = async (pathId, e) => {
+        e.stopPropagation();
+        if (!window.confirm('Are you sure you want to delete this learning path?')) {
+            return;
+        }
+
+        try {
+            await api.delete(`/learning-paths/${pathId}`);
+            setLearningPaths(prev => prev.filter(p => p.id !== pathId));
+        } catch (err) {
+            console.error('[Dashboard] Error deleting path:', err);
+            setError('Failed to delete learning path');
+        }
+    };
+
+    const getProgressPercentage = (path) => {
+        if (!path.items || path.items.length === 0) return 0;
+        const completed = path.items.filter(item => item.completed).length;
+        return Math.round((completed / path.items.length) * 100);
+    };
+
+    const getSkillLevelColor = (level) => {
+        switch (level) {
+            case 'BEGINNER': return '#2ed573';
+            case 'INTERMEDIATE': return '#ffa502';
+            case 'ADVANCED': return '#ff4757';
+            default: return '#00d4ff';
+        }
+    };
+
+    const isAdmin = user?.role === 'ADMIN' || user?.role === 'ROLE_ADMIN';
+
+    if (loading) {
+        return (
+            <div className="dashboard-loading">
+                <div className="loader"></div>
+                <p>Loading your dashboard...</p>
+            </div>
+        );
     }
-  };
 
-  if (!learningPath) {
     return (
-      <div className="dashboard-wrapper">
-        <div className="hero-section">
-          <div className="hero-background">
-            <div className="hero-shape shape-1"></div>
-            <div className="hero-shape shape-2"></div>
-            <div className="hero-shape shape-3"></div>
-          </div>
-          
-          <div className="hero-content">
-            <div className="hero-icon">🎓</div>
-            <h1 className="hero-title">Ready to Start Learning?</h1>
-            <p className="hero-subtitle">Take a quick assessment quiz to generate your personalized learning path</p>
-            
-            <button onClick={onStartQuiz} className="cta-button">
-              <span className="button-icon">🚀</span>
-              <span className="button-text">Take Assessment Quiz</span>
-              <span className="button-arrow">→</span>
-            </button>
-
-            <div className="features-grid">
-              <div className="feature-card">
-                <div className="feature-icon">📊</div>
-                <h3>Personalized Path</h3>
-                <p>Get a custom learning roadmap based on your skills</p>
-              </div>
-              <div className="feature-card">
-                <div className="feature-icon">⏱️</div>
-                <h3>Time Estimates</h3>
-                <p>Know exactly how long each module will take</p>
-              </div>
-              <div className="feature-card">
-                <div className="feature-icon">🎯</div>
-                <h3>Track Progress</h3>
-                <p>Monitor your learning journey step by step</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const completedCount = progress?.completedModules?.length || 0;
-  const totalModules = learningPath.modules?.length || 0;
-  const progressPercent = totalModules > 0 ? (completedCount / totalModules) * 100 : 0;
-  const isAllDone = completedCount === totalModules;
-
-  return (
-    <div className="dashboard-wrapper">
-      {/* Progress Header */}
-      <div className="progress-hero">
-        <div className="progress-hero-content">
-          <div className="path-title-section">
-            <h1 className="path-title">
-              {learningPath.title}
-              {isAllDone && <span className="trophy-badge">🏆</span>}
-            </h1>
-            <p className="path-description">{learningPath.description}</p>
-          </div>
-
-          <div className="stats-grid">
-            <div className="stat-box">
-              <div className="stat-icon">⏱️</div>
-              <div className="stat-content">
-                <div className="stat-value">{learningPath.estimatedWeeks}</div>
-                <div className="stat-label">Weeks</div>
-              </div>
-            </div>
-            <div className="stat-box">
-              <div className="stat-icon">📚</div>
-              <div className="stat-content">
-                <div className="stat-value">{totalModules}</div>
-                <div className="stat-label">Modules</div>
-              </div>
-            </div>
-            <div className="stat-box highlight">
-              <div className="stat-icon">✓</div>
-              <div className="stat-content">
-                <div className="stat-value">{completedCount}/{totalModules}</div>
-                <div className="stat-label">Completed</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="progress-section">
-            <div className="progress-bar-modern">
-              <div 
-                className="progress-fill-modern"
-                style={{ width: `${progressPercent}%` }}
-              >
-                <span className="progress-percentage">{Math.round(progressPercent)}%</span>
-              </div>
-            </div>
-            <div className="motivation-badge">
-              {isAllDone ? (
-                <>🌟 Path Completed! You're Amazing!</>
-              ) : completedCount > 0 ? (
-                <>🔥 Keep Going! You're Making Great Progress!</>
-              ) : (
-                <>🚀 Let's Get Started on Your Journey!</>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Modules Section */}
-      <div className="modules-section">
-        <div className="section-header">
-          <h2 className="section-title">
-            <span className="title-icon">📖</span>
-            Your Learning Modules
-          </h2>
-        </div>
-
-        <div className="modules-grid">
-          {learningPath.modules && learningPath.modules.map((module, index) => {
-            const isCompleted = progress?.completedModules?.includes(index);
-            const isExpanded = expandedModule === index;
-            
-            return (
-              <div 
-                key={index} 
-                className={`module-box ${isCompleted ? 'completed' : ''} ${isExpanded ? 'expanded' : ''}`}
-              >
-                <div className="module-header-section">
-                  <div className="module-number">
-                    {isCompleted ? '✓' : index + 1}
-                  </div>
-                  <div className="module-title-section">
-                    <h3 className="module-title">{module.title}</h3>
-                    <div className="module-meta">
-                      <span className="module-duration">
-                        <span className="meta-icon">⏱️</span>
-                        {module.hours} hours
-                      </span>
-                      {isCompleted && (
-                        <span className="completion-badge">
-                          <span className="badge-icon">🎉</span>
-                          Completed
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <button 
-                    className="expand-button"
-                    onClick={() => setExpandedModule(isExpanded ? null : index)}
-                  >
-                    {isExpanded ? '▲' : '▼'}
-                  </button>
+        <div className="dashboard-container">
+            <header className="dashboard-header">
+                <div className="header-left">
+                    <h1>🎯 Learning Path Generator</h1>
+                    <span className="welcome-text">Welcome back, {user?.username || 'Learner'}!</span>
                 </div>
+                <div className="header-buttons">
+                    {isAdmin && (
+                        <button className="admin-btn" onClick={handleAdminPanel}>
+                            ⚙️ Admin Panel
+                        </button>
+                    )}
+                    <button className="logout-btn" onClick={handleLogout}>
+                        🚪 Logout
+                    </button>
+                </div>
+            </header>
 
-                <p className="module-description">{module.description}</p>
-
-                {isExpanded && module.topics && module.topics.length > 0 && (
-                  <div className="topics-section">
-                    <div className="topics-header">
-                      <span className="topics-icon">📋</span>
-                      <strong>What You'll Learn:</strong>
+            <main className="dashboard-main">
+                {error && (
+                    <div className="error-message">
+                        <span>{error}</span>
+                        <button onClick={() => setError('')}>×</button>
                     </div>
-                    <div className="topics-grid">
-                      {module.topics.map((topic, tIndex) => (
-                        <div key={tIndex} className="topic-chip">
-                          <span className="chip-icon">✓</span>
-                          {topic}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
                 )}
 
-                <div className="module-actions">
-                  {!isCompleted && !isAllDone ? (
-                    <button
-                      onClick={() => handleCompleteModule(index)}
-                      className="action-button complete"
-                    >
-                      <span className="button-icon">✨</span>
-                      <span>Mark as Complete</span>
-                    </button>
-                  ) : isCompleted ? (
-                    <div className="completed-indicator">
-                      <span className="check-icon">✓</span>
-                      Module Completed!
+                {/* Stats Section */}
+                <section className="stats-section">
+                    <div className="stat-card">
+                        <span className="stat-icon">🏆</span>
+                        <div className="stat-info">
+                            <h3>{gamificationProfile?.totalPoints || 0}</h3>
+                            <p>Total Points</p>
+                        </div>
                     </div>
-                  ) : null}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+                    <div className="stat-card">
+                        <span className="stat-icon">🔥</span>
+                        <div className="stat-info">
+                            <h3>{gamificationProfile?.currentStreak || 0}</h3>
+                            <p>Day Streak</p>
+                        </div>
+                    </div>
+                    <div className="stat-card">
+                        <span className="stat-icon">📚</span>
+                        <div className="stat-info">
+                            <h3>{gamificationProfile?.quizzesCompleted || 0}</h3>
+                            <p>Quizzes Done</p>
+                        </div>
+                    </div>
+                    <div className="stat-card">
+                        <span className="stat-icon">⭐</span>
+                        <div className="stat-info">
+                            <h3>Level {gamificationProfile?.level || 1}</h3>
+                            <p>Current Level</p>
+                        </div>
+                    </div>
+                </section>
 
-      {/* Action Buttons */}
-      <div className="action-section">
-        <button className="action-button-large export" onClick={handleExportCSV}>
-          <span className="button-icon">📥</span>
-          <span>Export as CSV</span>
-        </button>
-        <button className="action-button-large retake" onClick={onStartQuiz}>
-          <span className="button-icon">🔄</span>
-          <span>Take Another Quiz</span>
-        </button>
-      </div>
+                {/* Quick Actions */}
+                <section className="quick-actions">
+                    <h2>🚀 Quick Actions</h2>
+                    <div className="action-buttons">
+                        <button onClick={() => handleStartQuiz()}>
+                            📝 Start Quiz
+                        </button>
+                        <button onClick={() => setShowPathGenerator(true)}>
+                            🛤️ Generate Learning Path
+                        </button>
+                        <button onClick={handleLeaderboard}>
+                            🏅 Leaderboard
+                        </button>
+                    </div>
+                </section>
 
-      {/* Admin Quick Actions */}
-      {role === "ADMIN" && (
-        <div className="admin-quick-section">
-          <div className="admin-quick-header">
-            <span className="admin-icon">🛡️</span>
-            <h3>Admin Quick Access</h3>
-          </div>
-          <p className="admin-hint">Use the Admin Panel in the navigation to manage topics and questions</p>
+                {/* Path Generator Modal */}
+                {showPathGenerator && (
+                    <div className="modal-overlay" onClick={() => setShowPathGenerator(false)}>
+                        <div className="modal-content" onClick={e => e.stopPropagation()}>
+                            <h2>🛤️ Generate Personalized Learning Path</h2>
+                            <form onSubmit={handleGeneratePath}>
+                                <div className="form-group">
+                                    <label>Topic</label>
+                                    <select
+                                        value={pathForm.topic}
+                                        onChange={(e) => setPathForm({ ...pathForm, topic: e.target.value })}
+                                        required
+                                    >
+                                        <option value="">Select a topic...</option>
+                                        {topics.map((topic, index) => (
+                                            <option key={index} value={topic}>{topic}</option>
+                                        ))}
+                                        <option value="custom">+ Enter custom topic</option>
+                                    </select>
+                                </div>
+
+                                {pathForm.topic === 'custom' && (
+                                    <div className="form-group">
+                                        <label>Custom Topic</label>
+                                        <input
+                                            type="text"
+                                            placeholder="Enter your topic..."
+                                            onChange={(e) => setPathForm({ ...pathForm, topic: e.target.value })}
+                                        />
+                                    </div>
+                                )}
+
+                                <div className="form-group">
+                                    <label>Skill Level</label>
+                                    <select
+                                        value={pathForm.skillLevel}
+                                        onChange={(e) => setPathForm({ ...pathForm, skillLevel: e.target.value })}
+                                    >
+                                        <option value="BEGINNER">Beginner</option>
+                                        <option value="INTERMEDIATE">Intermediate</option>
+                                        <option value="ADVANCED">Advanced</option>
+                                    </select>
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Target Days: {pathForm.targetDays}</label>
+                                    <input
+                                        type="range"
+                                        min="7"
+                                        max="90"
+                                        value={pathForm.targetDays}
+                                        onChange={(e) => setPathForm({ ...pathForm, targetDays: e.target.value })}
+                                    />
+                                    <div className="range-labels">
+                                        <span>7 days</span>
+                                        <span>90 days</span>
+                                    </div>
+                                </div>
+
+                                <div className="modal-buttons">
+                                    <button type="submit" disabled={generatingPath}>
+                                        {generatingPath ? '⏳ Generating...' : '✨ Generate Path'}
+                                    </button>
+                                    <button type="button" onClick={() => setShowPathGenerator(false)}>
+                                        Cancel
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* Learning Paths */}
+                <section className="learning-paths-section">
+                    <h2>📖 My Learning Paths</h2>
+                    {learningPaths.length > 0 ? (
+                        <div className="paths-grid">
+                            {learningPaths.map((path) => (
+                                <div
+                                    key={path.id}
+                                    className="path-card"
+                                    onClick={() => handleViewPath(path.id)}
+                                >
+                                    <div className="path-header">
+                                        <h3>{path.topic || path.title}</h3>
+                                        <span
+                                            className="skill-badge"
+                                            style={{ backgroundColor: getSkillLevelColor(path.skillLevel) }}
+                                        >
+                                            {path.skillLevel}
+                                        </span>
+                                    </div>
+                                    <div className="path-progress">
+                                        <div className="progress-bar">
+                                            <div
+                                                className="progress-fill"
+                                                style={{ width: `${getProgressPercentage(path)}%` }}
+                                            ></div>
+                                        </div>
+                                        <span className="progress-text">
+                                            {getProgressPercentage(path)}% Complete
+                                        </span>
+                                    </div>
+                                    <div className="path-meta">
+                                        <span>📅 {path.targetDays || 30} days</span>
+                                        <span>📚 {path.items?.length || 0} items</span>
+                                    </div>
+                                    <button
+                                        className="delete-path-btn"
+                                        onClick={(e) => handleDeletePath(path.id, e)}
+                                    >
+                                        🗑️
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="empty-state">
+                            <div className="empty-icon">🛤️</div>
+                            <p>No learning paths yet. Generate your first personalized path!</p>
+                            <button onClick={() => setShowPathGenerator(true)}>
+                                🛤️ Create Your First Path
+                            </button>
+                        </div>
+                    )}
+                </section>
+
+                {/* Topics Section */}
+                <section className="topics-section">
+                    <h2>📚 Available Topics</h2>
+                    {topics.length > 0 ? (
+                        <div className="topics-grid">
+                            {topics.map((topic, index) => (
+                                <div
+                                    key={index}
+                                    className="topic-card"
+                                    onClick={() => handleStartQuiz(topic)}
+                                >
+                                    <span className="topic-icon">📘</span>
+                                    <span className="topic-name">{topic}</span>
+                                    <span className="topic-action">Start Quiz →</span>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="empty-state">
+                            <p>No topics available. Check back later or contact admin.</p>
+                        </div>
+                    )}
+                </section>
+            </main>
         </div>
-      )}
-    </div>
-  );
-}
+    );
+};
 
 export default Dashboard;

@@ -8,8 +8,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -99,6 +99,43 @@ public class GamificationService {
         return rewards;
     }
 
+    public GamificationProfile getUserProfile(User user) {
+        return getOrCreateProfile(user);
+    }
+
+    public List<Map<String, Object>> getLeaderboard(int limit) {
+        List<Map<String, Object>> leaderboard = new ArrayList<>();
+
+        gamificationProfileRepository.findAll().stream()
+                .sorted((a, b) -> Integer.compare(b.getTotalPoints(), a.getTotalPoints()))
+                .limit(limit)
+                .forEach(profile -> {
+                    Map<String, Object> entry = new HashMap<>();
+                    entry.put("username", profile.getUser().getUsername());
+                    entry.put("points", profile.getTotalPoints());
+                    entry.put("level", profile.getCurrentLevel());
+                    entry.put("streak", profile.getStreak());
+                    leaderboard.add(entry);
+                });
+
+        return leaderboard;
+    }
+
+    public Map<String, Object> getUserStats(User user) {
+        GamificationProfile profile = getOrCreateProfile(user);
+
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("totalPoints", profile.getTotalPoints());
+        stats.put("currentLevel", profile.getCurrentLevel());
+        stats.put("streak", profile.getStreak());
+        stats.put("quizzesCompleted", profile.getQuizzesCompleted());
+        stats.put("resourcesCompleted", profile.getResourcesCompleted());
+        stats.put("pathsCompleted", profile.getPathsCompleted());
+        stats.put("rank", getUserRank(user));
+
+        return stats;
+    }
+
     public int getUserRank(User user) {
         GamificationProfile profile = getOrCreateProfile(user);
         long rank = gamificationProfileRepository.findAll().stream()
@@ -112,6 +149,12 @@ public class GamificationService {
                 .orElseGet(() -> {
                     GamificationProfile profile = new GamificationProfile();
                     profile.setUser(user);
+                    profile.setTotalPoints(0);
+                    profile.setCurrentLevel(1);
+                    profile.setStreak(0);
+                    profile.setQuizzesCompleted(0);
+                    profile.setResourcesCompleted(0);
+                    profile.setPathsCompleted(0);
                     return gamificationProfileRepository.save(profile);
                 });
     }

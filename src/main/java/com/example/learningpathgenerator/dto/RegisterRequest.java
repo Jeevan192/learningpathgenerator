@@ -1,32 +1,21 @@
 package com.example.learningpathgenerator.dto;
 
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
 public class RegisterRequest {
     private String username;
+    private String email;
     private String password;
-    private String role; // Add this field
 
-    // Getters and Setters
-    public String getUsername() {
-        return username;
-    }
-
-    public void setUsername(String username) {
-        this.username = username;
-    }
-
-    public String getPassword() {
-        return password;
-    }
-
-    public void setPassword(String password) {
-        this.password = password;
-    }
-
-    public String getRole() {
-        return role;
-    }
-
-    public void setRole(String role) {
-        this.role = role;
-    }
+    // For admin registration with security
+    private String securityQuestion;
+    private String securityAnswer;
+    private String adminSecretKey;  // Secret key required for admin registration
 }

@@ -1,48 +1,73 @@
 package com.example.learningpathgenerator.Service;
 
 import com.example.learningpathgenerator.dto.QuizAnalysisResult;
-import com.example.learningpathgenerator.dto.SkillProfile;
-import com.example.learningpathgenerator.entity.QuizAttempt;
 import com.example.learningpathgenerator.entity.Question;
+import com.example.learningpathgenerator.entity.QuizAttempt;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class QuizAnalysisService {
 
+    private final AIContentService aiContentService;
+    private final ObjectMapper objectMapper;
+
     public QuizAnalysisResult analyzeQuizAttempt(QuizAttempt attempt) {
-        QuizAnalysisResult result = new QuizAnalysisResult();
+        try {
+            // 1. Prepare context for AI (Questions, User Answers, Correct Answers)
+            List<Map<String, Object>> quizContext = new ArrayList<>();
+            for (Question q : attempt.getQuiz().getQuestions()) {
+                Map<String, Object> item = new HashMap<>();
+                item.put("question", q.getQuestionText());
+                item.put("correctAnswer", q.getCorrectAnswer());
+                // Assuming answers are stored by Question ID as String
+                item.put("userAnswer", attempt.getAnswers().get(String.valueOf(q.getId())));
+                item.put("skills", q.getSkillsTested());
+                quizContext.add(item);
+            }
 
-        // Create skill profile
-        SkillProfile skillProfile = createSkillProfile(attempt);
-        result.setSkillProfile(skillProfile);
+            String jsonContext = objectMapper.writeValueAsString(quizContext);
 
-        // Calculate overall score
-        double overallScore = (double) attempt.getCorrectAnswers() / attempt.getTotalQuestions() * 100;
-        result.setOverallScore(overallScore);
+            // 2. Call AI Service to analyze performance
+            // The AI is expected to return a JSON matching QuizAnalysisResult structure
+            // (specifically populating skillProfile, feedback, and performance)
+            String aiResponse = aiContentService.analyzeQuizPerformance(jsonContext);
 
-        // Determine performance level
-        String performanceLevel;
-        if (overallScore >= 90) {
-            performanceLevel = "EXCELLENT";
-        } else if (overallScore >= 75) {
-            performanceLevel = "GOOD";
-        } else if (overallScore >= 60) {
-            performanceLevel = "AVERAGE";
-        } else {
-            performanceLevel = "POOR";
+            QuizAnalysisResult result = objectMapper.readValue(aiResponse, QuizAnalysisResult.class);
+
+            // 3. Override calculated fields to ensure mathematical accuracy
+            // (We trust code over AI for simple math)
+            int correct = attempt.getCorrectAnswers();
+            int total = attempt.getTotalQuestions();
+            double score = total > 0 ? (double) correct / total * 100 : 0;
+
+            result.setCorrectCount(correct);
+            result.setTotalQuestions(total);
+            result.setScorePercentage(score);
+
+            return result;
+
+        } catch (Exception e) {
+            log.error("AI Analysis failed, falling back to basic calculation", e);
+            return fallbackAnalysis(attempt);
         }
-        result.setPerformanceLevel(performanceLevel);
+    }
 
-        // Generate recommendation
-        String recommendation = generateRecommendation(skillProfile, performanceLevel);
-        result.setRecommendation(recommendation);
+    private QuizAnalysisResult fallbackAnalysis(QuizAttempt attempt) {
+        QuizAnalysisResult result = new QuizAnalysisResult();
+        double score = (double) attempt.getCorrectAnswers() / attempt.getTotalQuestions() * 100;
+
+        result.setScorePercentage(score);
+        result.setCorrectCount(attempt.getCorrectAnswers());
+        result.setTotalQuestions(attempt.getTotalQuestions());
+        result.setPerformance(score > 75 ? "GOOD" : "AVERAGE");
+        result.setFeedback("AI Analysis unavailable at this time. Your score is " + String.format("%.2f", score) + "%.");
 
         return result;
     }
@@ -54,11 +79,11 @@ public class QuizAnalysisService {
             Map<String, Object> questionData = new HashMap<>();
             questionData.put("questionId", question.getId());
             questionData.put("questionText", question.getQuestionText());
-            
+
             String userAnswer = attempt.getAnswers().get(String.valueOf(question.getId()));
             questionData.put("userAnswer", userAnswer);
             questionData.put("correctAnswer", question.getCorrectAnswer());
-            
+
             boolean isCorrect = question.getCorrectAnswer().equals(userAnswer);
             questionData.put("correct", isCorrect);
             questionData.put("skillsTested", question.getSkillsTested());
@@ -71,103 +96,16 @@ public class QuizAnalysisService {
 
     public Map<String, Object> getPerformanceComparison(QuizAttempt attempt) {
         Map<String, Object> comparison = new HashMap<>();
-        
+
         double userScore = (double) attempt.getCorrectAnswers() / attempt.getTotalQuestions() * 100;
         comparison.put("userScore", userScore);
+
+        // Ensure your Quiz entity has the 'passingScore' field
         comparison.put("passingScore", (double) attempt.getQuiz().getPassingScore() / attempt.getTotalQuestions() * 100);
-        
+
         // Mock average score (in real implementation, calculate from all attempts)
         comparison.put("averageScore", 70.0);
-        
+
         return comparison;
-    }
-
-    private SkillProfile createSkillProfile(QuizAttempt attempt) {
-        SkillProfile profile = new SkillProfile();
-
-        // Analyze skill scores from attempt
-        Map<String, Double> skillScores = attempt.getSkillScores();
-        Map<String, String> skillProficiency = new HashMap<>();
-
-        for (Map.Entry<String, Double> entry : skillScores.entrySet()) {
-            String skill = entry.getKey();
-            Double score = entry.getValue();
-
-            String level;
-            if (score >= 0.8) {
-                level = "ADVANCED";
-            } else if (score >= 0.6) {
-                level = "INTERMEDIATE";
-            } else {
-                level = "BEGINNER";
-            }
-
-            skillProficiency.put(skill, level);
-        }
-
-        profile.setSkillProficiency(skillProficiency);
-
-        // Identify strengths and weaknesses
-        List<String> strengths = skillScores.entrySet().stream()
-                .filter(e -> e.getValue() >= 0.7)
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toList());
-
-        List<String> weaknesses = skillScores.entrySet().stream()
-                .filter(e -> e.getValue() < 0.6)
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toList());
-
-        profile.setStrengths(strengths);
-        profile.setWeaknesses(weaknesses);
-
-        // Determine current level
-        double avgScore = skillScores.values().stream()
-                .mapToDouble(Double::doubleValue)
-                .average()
-                .orElse(0.5);
-
-        if (avgScore >= 0.8) {
-            profile.setCurrentLevel("ADVANCED");
-        } else if (avgScore >= 0.6) {
-            profile.setCurrentLevel("INTERMEDIATE");
-        } else {
-            profile.setCurrentLevel("BEGINNER");
-        }
-
-        // Recommend learning style
-        profile.setRecommendedLearningStyle("HANDS_ON");
-
-        return profile;
-    }
-
-    private String generateRecommendation(SkillProfile profile, String performanceLevel) {
-        StringBuilder recommendation = new StringBuilder();
-
-        if ("EXCELLENT".equals(performanceLevel)) {
-            recommendation.append("Outstanding performance! ");
-        } else if ("GOOD".equals(performanceLevel)) {
-            recommendation.append("Good job! ");
-        } else if ("AVERAGE".equals(performanceLevel)) {
-            recommendation.append("You're making progress! ");
-        } else {
-            recommendation.append("Don't worry, everyone starts somewhere! ");
-        }
-
-        if (profile.getWeaknesses() != null && !profile.getWeaknesses().isEmpty()) {
-            recommendation.append("Focus on improving: ")
-                    .append(String.join(", ", profile.getWeaknesses()))
-                    .append(". ");
-        }
-
-        if (profile.getStrengths() != null && !profile.getStrengths().isEmpty()) {
-            recommendation.append("Your strengths include: ")
-                    .append(String.join(", ", profile.getStrengths()))
-                    .append(". ");
-        }
-
-        recommendation.append("A personalized learning path has been generated to help you improve.");
-
-        return recommendation.toString();
     }
 }

@@ -8,7 +8,7 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
-import java.util.stream.Collectors;
+import java.util.List;
 
 @Service
 public class CustomUserDetailsService implements UserDetailsService {
@@ -27,9 +27,8 @@ public class CustomUserDetailsService implements UserDetailsService {
         return org.springframework.security.core.userdetails.User.builder()
                 .username(user.getUsername())
                 .password(user.getPassword())
-                .authorities(user.getRoles().stream()
-                        .map(SimpleGrantedAuthority::new)
-                        .collect(Collectors.toList()))
+                // Fix: Map the single Role enum to a GrantedAuthority list
+                .authorities(List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name())))
                 .build();
     }
 }

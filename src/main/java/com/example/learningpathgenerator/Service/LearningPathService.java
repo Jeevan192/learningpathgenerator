@@ -28,11 +28,9 @@ public class LearningPathService {
     public LearningPath generateLearningPath(User user, QuizAttempt quizAttempt) {
         log.info("Generating learning path for user: {}", user.getId());
 
-        // Analyze quiz to get skill profile
         QuizAnalysisResult analysis = quizAnalysisService.analyzeQuizAttempt(quizAttempt);
         SkillProfile skillProfile = analysis.getSkillProfile();
 
-        // Create learning path
         LearningPath path = new LearningPath();
         path.setUser(user);
         path.setTargetSkill(quizAttempt.getQuiz().getTopic());
@@ -40,21 +38,17 @@ public class LearningPathService {
         path.setCreatedAt(LocalDateTime.now());
         path.setCompletionPercentage(0.0);
 
-        // Determine difficulty level
         String difficulty = determineDifficultyLevel(skillProfile);
         path.setDifficultyLevel(difficulty);
 
-        // Get available resources
         List<LearningResource> availableResources = resourceRepository.findAll();
 
-        // Use ML to recommend resources
         List<ResourceRecommendation> recommendations = mlModelService.recommendResources(
                 skillProfile,
                 availableResources,
-                10  // top 10 resources
+                10
         );
 
-        // Create ordered learning resources
         List<LearningResource> pathResources = new ArrayList<>();
         int sequence = 1;
         int totalDuration = 0;
@@ -79,14 +73,17 @@ public class LearningPathService {
         }
 
         path.setResources(pathResources);
-        path.setEstimatedDuration(totalDuration / 60); // convert to hours
+        path.setEstimatedDuration(totalDuration / 60);
 
-        // Generate AI-powered description
+        // FIX: Extract lists to avoid type inference issues
         try {
+            List<String> weaknesses = skillProfile.getWeaknesses();
+            List<String> strengths = skillProfile.getStrengths();
+
             String description = aiContentService.generateLearningPathDescription(
                     path.getTargetSkill(),
-                    skillProfile.getWeaknesses() != null ? skillProfile.getWeaknesses() : List.of(),
-                    skillProfile.getStrengths() != null ? skillProfile.getStrengths() : List.of(),
+                    weaknesses != null ? weaknesses : Collections.emptyList(),
+                    strengths != null ? strengths : Collections.emptyList(),
                     skillProfile.getRecommendedLearningStyle()
             );
             path.setDescription(description);
@@ -95,10 +92,7 @@ public class LearningPathService {
             path.setDescription("A personalized learning path to master " + path.getTargetSkill());
         }
 
-        // Set title
         path.setTitle(String.format("Master %s - Personalized Path", path.getTargetSkill()));
-
-        // Generate explanation
         path.setGenerationReason(generatePathReason(skillProfile, recommendations));
 
         return learningPathRepository.save(path);
@@ -111,7 +105,6 @@ public class LearningPathService {
 
         User user = path.getUser();
 
-        // Find or create resource progress
         LearningResource resource = path.getResources().stream()
                 .filter(r -> r.getId().equals(resourceId))
                 .findFirst()
@@ -137,7 +130,6 @@ public class LearningPathService {
 
         resourceProgressRepository.save(progress);
 
-        // Calculate overall path completion
         long completedResources = path.getResources().stream()
                 .filter(r -> {
                     Optional<ResourceProgress> rp = resourceProgressRepository.findByUserAndResource(user, r);
@@ -160,7 +152,6 @@ public class LearningPathService {
         LearningPath path = learningPathRepository.findById(pathId)
                 .orElseThrow(() -> new RuntimeException("Path not found"));
 
-        // Find first incomplete resource
         return path.getResources().stream()
                 .filter(r -> {
                     Optional<ResourceProgress> rp = resourceProgressRepository.findByUserAndResource(user, r);
@@ -200,8 +191,7 @@ public class LearningPathService {
         return "BEGINNER";
     }
 
-    private String generatePathReason(SkillProfile profile,
-                                      List<ResourceRecommendation> recommendations) {
+    private String generatePathReason(SkillProfile profile, List<ResourceRecommendation> recommendations) {
         StringBuilder reason = new StringBuilder();
         reason.append("This path was generated based on your quiz performance. ");
 
@@ -218,9 +208,7 @@ public class LearningPathService {
                 .mapToInt(r -> r.getResource().getEstimatedDuration())
                 .sum();
 
-        reason.append("Estimated completion: ")
-                .append(totalMinutes / 60)
-                .append(" hours.");
+        reason.append("Estimated completion: ").append(totalMinutes / 60).append(" hours.");
 
         return reason.toString();
     }

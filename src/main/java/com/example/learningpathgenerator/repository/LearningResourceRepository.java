@@ -6,4 +6,5 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface LearningResourceRepository extends JpaRepository<LearningResource, Long> {
+    // Basic CRUD is sufficient for findAll()
 }
